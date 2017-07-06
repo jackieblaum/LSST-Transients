@@ -1,37 +1,12 @@
-class Box(object):
-    '''
-    A box object is a square region, many of which form a grid.
-    '''
-
-    def __init__(self, x, y, side):
-        '''
-        Constructs a Box object.
-
-        :param x: The horizontal location of the center of the box
-        :param y: The vertical location of the center of the box
-        :param side: The length of the sides of the box
-        '''
-
-        self.x = x
-        self.y = y
-        self.side = side
-
-    def __str__(self):
-        '''
-        Overrides the string function for a Box object.
-
-        :return: a string in the form "box(x, y, width, height, angle)" to create a box region in DS9
-        '''
-
-        return "box(" + str(self.x) + ", " + str(self.y) + ", " + str(self.side) + ", " + str(self.side) + ", 0)"
+from box import Box
 
 
 class Grid(object):
     '''
-    The constructor takes the x and y coordinates of the center of the image (xcenter, ycenter)
-    and the maximum and minimum x and y coordinates of the image (xcenter, ycenter).
+    The constructor takes the _x and _y coordinates of the center of the image (xcenter, ycenter)
+    and the maximum and minimum _x and _y coordinates of the image (xcenter, ycenter).
 
-    It also sets the overlap factor (overlapfactor) and side length (side) of the boxes in the grid,
+    It also sets the overlap factor (overlapfactor) and _side length (_side) of the boxes in the grid,
     and then calculates the overlap by multiplying these two values.
 
     An empty array of Box objects is also instantiated.
@@ -39,12 +14,12 @@ class Grid(object):
 
     def __init__(self, xcenter, ycenter, xymax, xymin, overlapfactor, side):
         '''
-        Constructs a grid object. A box list is instantiated, and the overlap length is set to be the product of the overlap factor and side length.
+        Constructs a grid object. A box list is instantiated, and the overlap length is set to be the product of the overlap factor and _side length.
 
-        :param xcenter: The x-coordinate of the center of the image
-        :param ycenter: The y-coordinate of the center of the image
-        :param xymax: The maximum x- and y-coordinates of the image
-        :param xymin: The minimum x- and y-coordinates of the image
+        :param xcenter: The _x-coordinate of the center of the image
+        :param ycenter: The _y-coordinate of the center of the image
+        :param xymax: The maximum _x- and _y-coordinates of the image
+        :param xymin: The minimum _x- and _y-coordinates of the image
         :param overlapfactor: The fraction of the length of the box by which the boxes overlap one another on the grid
         :param side: The length of the sides of the boxes in the grid
         '''
@@ -67,8 +42,8 @@ class Grid(object):
 
         *Not yet fully implemented to account for rotation angle.
 
-        :param x: The x-coordinate of the center of the current Box
-        :param y: The y-coordinate of the center of the current Box
+        :param x: The _x-coordinate of the center of the current Box
+        :param y: The _y-coordinate of the center of the current Box
         :return: False if the box is out of the region of interest, True otherwise
         '''
 
@@ -86,9 +61,9 @@ class Grid(object):
         Finds the boxes in the current row or column and adds them to the Box array if they are in range.
 
         :param steps: The number of boxes needed to be added in the row or column
-        :param x: The x-coordinate of the current Box.
-        :param y: The y-coordinate of the current Box.
-        :param xory: Either "x" or "y"; tells whether boxes are being added to the row or column
+        :param x: The _x-coordinate of the current Box.
+        :param y: The _y-coordinate of the current Box.
+        :param xory: Either "_x" or "_y"; tells whether boxes are being added to the row or column
         :param addorsub: Either "add" or "sub"; tells which direction to move along the row or column
         :return: True if at least one of the boxes is in the region of interest, False otherwise
         '''
@@ -100,17 +75,17 @@ class Grid(object):
 
             if addorsub == "add":
 
-                if xory == "y":
+                if xory == "_y":
                     y = y + (self.side - self.overlap)
 
-            elif xory == "x":
+            elif xory == "_x":
                     x = x + (self.side - self.overlap)
 
             elif addorsub == "sub":
-                if xory == "y":
+                if xory == "_y":
                     y = y - (self.side - self.overlap)
 
-                elif xory == "x":
+                elif xory == "_x":
                     x = x - (self.side - self.overlap)
 
             if not self._out_of_range(x, y):
@@ -126,8 +101,8 @@ class Grid(object):
 
          The some_in_range variables keep track of whether any boxes are within the region of interest. They remain false until a Box is added to the array in the current round.
 
-        :param x: The x-coordinate of the current Box.
-        :param y: The y-coordinate of the current Box.
+        :param x: The _x-coordinate of the current Box.
+        :param y: The _y-coordinate of the current Box.
         :param steps: The number of boxes needed to be added in the row or column
         :return: True if at least one Box is in the field of view, False if all boxes in the round
         are out of range.
@@ -159,8 +134,8 @@ class Grid(object):
         accounted for. Otherwise, do_round() is called in order to add Box objects to the
         Box array.
 
-        :param x: The x-coordinate of the current Box.
-        :param y: The y-coordinate of the current Box.
+        :param x: The _x-coordinate of the current Box.
+        :param y: The _y-coordinate of the current Box.
         :param steps: The number of boxes needed to be added in the row or column; increases by 2 for each round
         :return: No return value
         '''
@@ -191,14 +166,16 @@ class Grid(object):
         return self.boxes
 
 
-#Needs to be changed to take user input later
-grid = Grid(2000, 2000, 4100, 0, 0.5, 400)
-boxes = grid.get_grid()
+if __name__=="__main__":
 
-# Write the grid to a DS9 region file
+    #Needs to be changed to take user input later
+    grid = Grid(2000, 2000, 4100, 0, 0.5, 400)
+    boxes = grid.get_grid()
 
-with open("grid.reg", "w+") as f:
-    f.write("physical\n")
+    # Write the grid to a DS9 region file
 
-    for box in boxes:
-        f.write("%s\n" % str(box))
+    with open("grid.reg", "w+") as f:
+        f.write("physical\n")
+
+        for box in boxes:
+            f.write("%s\n" % str(box))
