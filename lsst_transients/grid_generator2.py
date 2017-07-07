@@ -65,98 +65,6 @@ class Grid(object):
 
             return False
 
-    # def _do_steps(self, steps, _x, _y, xory, addorsub):
-    #     '''
-    #     Finds the boxes in the current row or column and adds them to the Box array if they are in range.
-    #
-    #     :param steps: The number of boxes needed to be added in the row or column
-    #     :param _x: The _x-coordinate of the current Box.
-    #     :param _y: The _y-coordinate of the current Box.
-    #     :param xory: Either "_x" or "_y"; tells whether boxes are being added to the row or column
-    #     :param addorsub: Either "add" or "sub"; tells which direction to move along the row or column
-    #     :return: True if at least one of the boxes is in the region of interest, False otherwise
-    #     '''
-    #
-    #     some_in_range = False
-    #
-    #     # Needs to be changed to calculate angular distance later
-    #     for i in range(steps):
-    #
-    #         if addorsub == "add":
-    #
-    #             if xory == "_y":
-    #                 _y = _y + (self._side - self.overlap)
-    #
-    #         elif xory == "_x":
-    #             _x = _x + (self._side - self.overlap)
-    #
-    #         elif addorsub == "sub":
-    #             if xory == "_y":
-    #                 _y = _y - (self._side - self.overlap)
-    #
-    #             elif xory == "_x":
-    #                 _x = _x - (self._side - self.overlap)
-    #
-    #         if not self._out_of_range(_x, _y):
-    #             self.boxes.append(Box(_x, _y, self._side))
-    #             some_in_range = True
-    #
-    #     return some_in_range
-    #
-    # def _do_round(self, _x, _y, steps):
-    #     '''
-    #      A helper method used by gen_grid() to add the next round of Box objects to the Box array.
-    #
-    #      The some_in_range variables keep track of whether any boxes are within the region of interest. They remain
-    #      false until a Box is added to the array in the current round.
-    #
-    #     :param _x: The _x-coordinate of the current Box.
-    #     :param _y: The _y-coordinate of the current Box.
-    #     :param steps: The number of boxes needed to be added in the row or column
-    #     :return: True if at least one Box is in the field of view, False if all boxes in the round
-    #     are out of range.
-    #     '''
-    #
-    #     some_in_range_1, some_in_range_2, some_in_range_3, some_in_range_4, some_in_range_5 = False
-    #
-    #     if steps == 0:
-    #
-    #         self.boxes.append(Box(_x, _y, self._side))
-    #         some_in_range_1 = True
-    #
-    #
-    #     else:
-    #
-    #         some_in_range_2 = self._do_steps(steps, _x, _y, _y, "sub")
-    #         some_in_range_3 = self._do_steps(steps, _x, _y, _x, "sub")
-    #         some_in_range_4 = self._do_steps(steps, _x, _y, _y, "add")
-    #         some_in_range_5 = self._do_steps(steps, _x, _y, _x, "add")
-    #
-    #     return some_in_range_1 or some_in_range_2 or some_in_range_3 or some_in_range_4 or some_in_range_5
-    #
-    # def _gen_grid(self, _x, _y, steps):
-    #     '''
-    #     Recursion is used to fill the Box array. The base case is when all the Box objects
-    #     created by do_round() fall outside of the field of view. This round of Box objects
-    #     is still added to the array in order to make sure that the edges of the region are
-    #     accounted for. Otherwise, do_round() is called in order to add Box objects to the
-    #     Box array.
-    #
-    #     :param _x: The _x-coordinate of the current Box.
-    #     :param _y: The _y-coordinate of the current Box.
-    #     :param steps: The number of boxes needed to be added in the row or column; increases by 2 for each round
-    #     :return: No return value
-    #     '''
-    #
-    #     if self._do_round(_x, _y, steps) == 1:
-    #
-    #         return None
-    #
-    #
-    #     else:
-    #
-    #         # Needs to be changed to calculate angular distance later
-    #         self._gen_grid(_x + self._side - self.overlap, _y + self._side - self.overlap, steps + 2)
 
     def _do_round(self, delta):
 
@@ -203,80 +111,71 @@ class Grid(object):
         survived_boxes = filter(self._in_range, all_boxes)
 
         return survived_boxes
+    
 
-        # iteration = 1
-        #
-        # boxes = [Box(self.xcenter, self.ycenter, self.side)]
-        #
-        # # Infinite loop, will exit with break
-        # while True:
-        #
-        #     # Compute the delta in coordinates
-        #     delta = iteration * (self.side - self.overlap)
-        #
-        #     print(delta)
-        #
-        #     # This will contain the boxes generated in this round
-        #     boxes_in_this_round = self._do_round(delta)
-        #
-        #     # print("Generated %s boxes" % (len(boxes_in_this_round)))
-        #     #
-        #     # min_x = min(map(lambda this_box:this_box.x, boxes_in_this_round))
-        #     # min_y = min(map(lambda this_box: this_box.y, boxes_in_this_round))
-        #     #
-        #     # if min_x < 0:
-        #     #
-        #     #     self.debug = True
-        #     #
-        #     #     #import pdb;pdb.set_trace()
-        #     #
-        #     # print("Minimum _x: %s, Minimum _y: %s" % (min_x, min_y))
-        #
-        #     # Filter out boxes that are outside of the field of view
-        #     #survived_boxes = filter(self._in_range, boxes_in_this_round)
-        #
-        #     survived_boxes = []
-        #
-        #     for box in boxes_in_this_round:
-        #
-        #         if self._in_range(box):
-        #
-        #             #print("Box %s succeeded" % box)
-        #
-        #             survived_boxes.append(box)
-        #
-        #         else:
-        #             pass
-        #             #print("Box %s failed" % box)
-        #
-        #     print("%s boxes survived" % (len(survived_boxes)))
-        #
-        #     if len(survived_boxes) == 0 or len(boxes_in_this_round) > 5000:
-        #
-        #         # We are finished
-        #         break
-        #
-        #     else:
-        #
-        #         # Let's add these boxes and go on with the next round
-        #
-        #         boxes.extend(survived_boxes)
-        #
-        #         iteration += 1
+    def pix_to_wcs(self, filename, boxes):
+        '''
+        Converts the center coordinates for each box in the array from pixels to WCS and
+        stores them in a new array.
 
-        return boxes
+        :param filename: The name of the file from which the HDUlist will be loaded
+        :param boxes: The array of boxes with locations in pixel coordinates
+        :return: The array of boxes with locations in WCS
+        '''
 
+        arr = []
+        for box in boxes:
+
+            arr.append([box.x, box.y])
+
+
+        boxes_wcs = pix2world(filename, arr)
+
+        return boxes_wcs
+    
 
 if __name__ == "__main__":
+    
+    
+    # Collect input from the user
+    parser = argparse.ArgumentParser(description="Grid Region Generator")
+    parser.add_argument('-i', '--input', type=str, help='Input filename', required=True)
+    parser.add_argument('-o', '--output', type=str, help='Output filename', required=True)
+    parser.add_argument('-s', '--side', type=float, help='Length of the side of the boxes in pixels', required=True)
+    parser.add_argument('-f', '--fraction', type=float, help='Fraction of the box for which they overlap', required=True)
 
-    # Needs to be changed to take user input later
+    args = parser.parse_args()
+
+
+    # Open the header from the fits file inputted by the user
+    header = pyfits.getheader(args.input, 0)
+
+    # Set variables by reading from the header
+    center_pix_x = header['CRPIX1']
+    center_pix_y = header['CRPIX2']
+    max_pix_x = header['NAXIS1']
+    max_pix_y = header['NAXIS2']
+    rotation_angle = header['ROTANG']
+
+    # Generate the grid
     grid = Grid(2000, 2000, 0, 4100, 0, 4100, 0.5, 400)
     boxes = grid.get_grid()
 
-    # Write the grid to a DS9 region file
+    # Convert the locations of the boxes to WCS
+    boxes_wcs = grid.pix_to_wcs(args.input, boxes)
 
-    with open("grid.reg", "w+") as f:
+    # Convert the side length of the boxes to WCS
+    side_wcs = grid.pix_to_wcs(args.input, [args.side])
+
+    # Write the grid to a DS9 region file
+    with open(args.output, "w+") as f:
         f.write("physical\n")
 
-        for box in boxes:
-            f.write("%s\n" % str(box))
+        for box in np.nditer(boxes_wcs):
+            f.write("box(%f, %f, %f, %f, 0)" % (box[0], box[1], side_wcs[0], side_wcs[0]))
+
+            
+    print("Input file: %s" % args.input)
+    print("Output file: %s" % args.output)
+    print("Side length of boxes in pixels/WCS: %f/ %f" % (args.side, side_wcs[0]))
+    print("Overlap (fraction of box): %f" % args.fraction)
