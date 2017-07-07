@@ -1,7 +1,12 @@
 from box import Box
 from utils.cartesian_product import cartesian_product
+from utils.pix2world import pix2world
 
 import numpy as np
+import astropy.io.fits as pyfits
+import argparse
+from astropy.coordinates.angle_utilities import angular_separation
+import astropy.units as u
 
 
 class Grid(object):
@@ -158,24 +163,42 @@ if __name__ == "__main__":
     rotation_angle = header['ROTANG']
 
     # Generate the grid
-    grid = Grid(2000, 2000, 0, 4100, 0, 4100, 0.5, 400)
+    grid = Grid(center_pix_x, center_pix_y, 0, max_pix_x, 0, max_pix_y, args.fraction, args.side)
     boxes = grid.get_grid()
 
     # Convert the locations of the boxes to WCS
     boxes_wcs = grid.pix_to_wcs(args.input, boxes)
 
     # Convert the side length of the boxes to WCS
-    side_wcs = grid.pix_to_wcs(args.input, [args.side])
+    # NOTE: we assume that on this angular scale there is no distortion due to the projection
+    # TODO: fix the projection for the entire LSST field of view (3.5 deg)
+
+    # Get the angular distance between the upper left corner and the upper right corner of the
+    # center box
+    center_box = boxes[0]
+    upper_left_x = center_box.x - center_box.side / 2.0
+    upper_y = center_box.y - center_box.side / 2.0
+    upper_right_x = center_box.x + center_box.side / 2.0
+
+    upper_left_sky_coords, upper_right_sky_coords = pix2world(args.input,
+                                                              [[upper_left_x, upper_y], [upper_right_x, upper_y]])
+
+    angular_distance = angular_separation(upper_left_sky_coords[0] * u.deg, upper_left_sky_coords[1] * u.deg,
+                                          upper_right_sky_coords[0] * u.deg, upper_right_sky_coords[1] * u.deg)
+
+    angular_distance_arcsec = angular_distance.to("arcsec").value
 
     # Write the grid to a DS9 region file
     with open(args.output, "w+") as f:
-        f.write("physical\n")
+        f.write("icrs\n")
 
-        for box in np.nditer(boxes_wcs):
-            f.write("box(%f, %f, %f, %f, 0)" % (box[0], box[1], side_wcs[0], side_wcs[0]))
+        for (ra, dec) in boxes_wcs:
+
+            f.write('box(%f, %f, %f", %f", %f)\n' % (ra, dec, angular_distance_arcsec, angular_distance_arcsec,
+                                                     360 - rotation_angle))
 
             
     print("Input file: %s" % args.input)
     print("Output file: %s" % args.output)
-    print("Side length of boxes in pixels/WCS: %f/ %f" % (args.side, side_wcs[0]))
+    print("Side length of boxes in pixels/arcsec: %f/ %f" % (args.side, angular_distance_arcsec))
     print("Overlap (fraction of box): %f" % args.fraction)
