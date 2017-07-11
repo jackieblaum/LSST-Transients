@@ -196,7 +196,7 @@ if __name__ == "__main__":
                                                      360 - rotation_angle))
             elif args.shape == "circle":
 
-                f.write('circle(%f, %f, %f)\n' % (ra, dec, angular_distance_arcsec/2.0))
+                f.write('circle(%f, %f, %f")\n' % (ra, dec, angular_distance_arcsec/2.0))
 
     print("Input file: %s" % args.input)
     print("Output file: %s" % args.output)
