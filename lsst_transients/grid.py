@@ -140,7 +140,7 @@ class Grid(object):
         return regions_wcs
 
 
-    def write_grid(self, infile, outfile, shape):
+    def write_grid(self, infile, outfile, shape, rotation_angle):
         '''
         Converts the grid coordinates from pixels to WCS and writes the grid to a file.
 
