@@ -15,7 +15,7 @@ def pix2world(filename, array):
     hdulist = pyfits.open(filename)
 
     # Parse the WCS keywords in the primary HDU
-    w = wcs.WCS(hdulist[0].header)
+    w = wcs.WCS(hdulist[1].header)
 
     # Pixel coordinates
     pixels = numpy.array(array, numpy.float)
