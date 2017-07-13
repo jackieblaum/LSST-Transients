@@ -28,10 +28,12 @@ if __name__ == "__main__":
 	
     if header['ROTANG']:
         rotation_angle = header['ROTANG']
+    else:
+        rotation_angle = 0
 
     # Generate the grid
     grid = Grid(center_pix_x, center_pix_y, 0, max_pix_x, 0, max_pix_y, args.fraction, args.diameter, args.shape)
-    angular_distance_arcsec = grid.write_grid(args.infile, args.output, args.shape)
+    angular_distance_arcsec = grid.write_grid(args.infile, args.output, args.shape, rotation_angle)
 
     print("Input file: %s" % args.input)
     print("Output file: %s" % args.output)
