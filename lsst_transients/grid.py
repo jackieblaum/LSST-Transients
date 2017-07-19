@@ -63,7 +63,7 @@ class Grid(object):
         x = a_region.x
         y = a_region.y
 
-        if self._xmin < x < self._xmax and self._ymin < y < self._ymax:
+        if self._xmin-1 - (self.d/2) < x < self._xmax+1 + (self.d/2) and self._ymin-1 - (self.d/2) < y < self._ymax+1 + (self.d/2):
 
             return True
 
@@ -75,14 +75,14 @@ class Grid(object):
     def _do_round(self, delta):
 
         # Let's figure out the iteration we are in
-        iteration = delta / (self.d - self.overlap)
-
-        # Let's compute the start point of the round
-        start_x = self.xcenter + delta
-        start_y = self.ycenter + delta
-
+        iteration = np.floor(delta / (self.d - self.overlap))
+        
         # How many steps do we need to complete one side of the round?
         steps = iteration * 2
+
+        # Let's compute the start point of the round
+        start_x = self.xcenter + (self.d - self.overlap)*iteration
+        start_y = self.ycenter + (self.d - self.overlap)*iteration
 
         xs = np.linspace(start_x - steps * (self.d - self.overlap), start_x, steps + 1)
         ys = np.linspace(start_y - steps * (self.d - self.overlap), start_y, steps + 1)
