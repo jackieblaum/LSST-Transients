@@ -1,5 +1,5 @@
 from grid import Grid
-from create_db import Database
+from create_db_notpyregion import Database
 
 import os
 import argparse
@@ -10,7 +10,6 @@ if __name__ == "__main__":
     # Collect input from the user
     parser = argparse.ArgumentParser(description="Collect information from each visit")
     parser.add_argument('-p', '--path', type=str, help='Input path to folder with all visit files', required=True)
-    parser.add_argument('-r', '--regfile', type=str, help='Name of the region file, include .reg', required=True)
     
     args = parser.parse_args()
         
