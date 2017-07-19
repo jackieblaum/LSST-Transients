@@ -17,14 +17,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Open the headers from the fits file inputted by the user
-    header = pyfits.getheader(args.infile, 0)
-    header2 = pyfits.getheader(args.infile, 1)
+    header = pyfits.getheader(args.input, 0)
+    header2 = pyfits.getheader(args.input, 1)
 
     # Set variables by reading from the header
     center_pix_x = header2['CRPIX1']
     center_pix_y = header2['CRPIX2']
-    max_pix_x = header2['NAXIS1']
-    max_pix_y = header2['NAXIS2']
+    max_pix_x = max_pix_x/2
+    max_pix_y = max_pix_y/2
 	
     if header['ROTANG']:
         rotation_angle = header['ROTANG']
@@ -32,8 +32,8 @@ if __name__ == "__main__":
         rotation_angle = 0
 
     # Generate the grid
-    grid = Grid(center_pix_x, center_pix_y, 0, max_pix_x, 0, max_pix_y, args.fraction, args.diameter, args.shape)
-    angular_distance_arcsec = grid.write_grid(args.infile, args.output, args.shape, rotation_angle)
+    grid = Grid(center_pix_x, center_pix_y, 1, max_pix_x, 1, max_pix_y, args.fraction, args.diameter, args.shape)
+    angular_distance_arcsec = grid.write_grid(args.input, args.output, args.shape, rotation_angle)
 
     print("Input file: %s" % args.input)
     print("Output file: %s" % args.output)
