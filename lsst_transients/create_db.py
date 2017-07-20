@@ -10,7 +10,7 @@ from oversample_image import oversample
 
 class Database(object):
     '''
-    The Database classed is used to create a database and write to three different tables: a region table, a flux table, and a conditions table.
+    The DataDatabase classed is used to create a database and write to three different tables: a region table, a flux table, and a conditions table.
     '''
     
     
@@ -29,7 +29,7 @@ class Database(object):
         '''
         #Fills the database with the string for each region as seen in DS9 and regID as the indices.
         
-        :param regfile: Region file created using grid_generator_shapes.py
+        :param regfile: Region file created using lsst_grid_generator_shapes.py
         '''
         
         with open(regfile) as f:
@@ -89,7 +89,7 @@ class Database(object):
         '''
         Gets the fluxes for all of the regions in the image.
         
-        :param regfile: The name of the region file created with grid_generator_shapes.py
+        :param regfile: The name of the region file created with lsst_grid_generator_shapes.py
         :param header: The header of the visit file to be examined
         
         :return fluxes: An array of the fluxes for each region in the image
@@ -140,7 +140,7 @@ class Database(object):
         '''
         Computes the error of the flux for each region of the background-subtracted image.
         
-        :param regfile: The name of the region file created with grid_generator_shapes.py
+        :param regfile: The name of the region file created with lsst_grid_generator_shapes.py
         :param nobkgd_fluxes: A list of fluxes for each region for the background subtracted image
         :param orig_fluxes: A list of fluxes for each region for the original image (before subtraction)
         
@@ -254,7 +254,7 @@ class Database(object):
         '''
         Fills the two dataframes that are indexed by visits. It first fills the flux table and then fills the conditions table.
         
-        :param regfile: The .reg file that stores the regions created by grid_generator_shapes.py
+        :param regfile: The .reg file that stores the regions created by lsst_grid_generator_shapes.py
         :param path: The path to folder with all visit files
         '''
         

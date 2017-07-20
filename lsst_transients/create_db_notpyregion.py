@@ -1,20 +1,15 @@
-import sqlite3
 import pandas as pd
 import sqlalchemy.engine
 import astropy.io.fits as pyfits
 import numpy as np
 import os, sys
 import re
-import pyregion
-import pyregion._region_filter as filter
 import astropy.units as u
 
 from region import Region
 from astropy import wcs
-from astropy.wcs import WCS
 from astropy.wcs.utils import proj_plane_pixel_scales
 from oversample_image import oversample
-from utils.world2pix import world2pix
 from utils.cartesian_product import cartesian_product
 
 import logging
@@ -24,9 +19,9 @@ log = logging.getLogger(os.path.basename(__file__))
 log.setLevel(logging.DEBUG)
 
 
-class Database(object):
+class DataDatabase(object):
     '''
-    The Database classed is used to create a database and write to different tables: a region table, a flux table for each region, and a conditions table.
+    The DataDatabase classed is used to create a database and write to different tables: a region table, a flux table for each region, and a conditions table.
     '''
     
     
@@ -45,7 +40,7 @@ class Database(object):
         '''
         #Fills the database with the string for each region as seen in DS9 and regID as the indices.
         
-        :param regfile: Region file created using grid_generator_shapes.py
+        :param regfile: Region file created using lsst_grid_generator_shapes.py
         '''
         
         with open(regfile) as f:
@@ -167,7 +162,7 @@ class Database(object):
         '''
         Gets the fluxes for all of the regions in the image.
         
-        :param reg: The region dataframe created with grid_generator_shapes.py
+        :param reg: The region dataframe created with lsst_grid_generator_shapes.py
         :param data: The data array of the visit file to be examined
         :param header: The header of the visit file to be examined
         

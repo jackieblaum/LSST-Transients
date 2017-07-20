@@ -1,4 +1,6 @@
-from grid import Grid
+#!/usr/bin/env python
+
+from lsst_transients.grid import Grid
 
 import astropy.io.fits as pyfits
 import argparse

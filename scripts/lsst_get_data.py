@@ -1,9 +1,7 @@
-from grid import Grid
-from create_db_notpyregion import Database
-
-import os
+#!/usr/bin/env python
 import argparse
-import astropy.io.fits as pyfits
+
+from lsst_transients.create_db_notpyregion import DataDatabase
 
 if __name__ == "__main__":
 
@@ -13,6 +11,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
         
-    db = Database("lsst_transients")
+    db = DataDatabase("lsst_transients")
     db.fill_visits(args.regfile, args.path)
     db.close()
