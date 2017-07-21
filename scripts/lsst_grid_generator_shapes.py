@@ -23,10 +23,10 @@ if __name__ == "__main__":
     header2 = pyfits.getheader(args.input, 1)
 
     # Set variables by reading from the header
-    center_pix_x = header2['CRPIX1']
-    center_pix_y = header2['CRPIX2']
-    max_pix_x = max_pix_x/2
-    max_pix_y = max_pix_y/2
+    max_pix_x = header2['NAXIS1']
+    max_pix_y = header2['NAXIS2']
+    center_pix_x = max_pix_x / 2
+    center_pix_y = max_pix_y / 2
 	
     if header['ROTANG']:
         rotation_angle = header['ROTANG']
