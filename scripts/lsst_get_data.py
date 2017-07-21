@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import argparse
 
-from lsst_transients.create_db_notpyregion import DataDatabase
+from lsst_transients.create_db_notpyregion import Data_Database
 
 if __name__ == "__main__":
 
@@ -11,6 +11,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
         
-    db = DataDatabase("lsst_transients")
+    db = Data_Database("lsst_transients.db")
     db.fill_visits(args.regfile, args.path)
     db.close()
