@@ -1,8 +1,7 @@
 import pandas as pd
-import sqlalchemy.engine
 import astropy.io.fits as pyfits
 import numpy as np
-import os, sys
+import os
 import re
 import astropy.units as u
 
@@ -11,6 +10,7 @@ from astropy import wcs
 from astropy.wcs.utils import proj_plane_pixel_scales
 from oversample_image import oversample
 from utils.cartesian_product import cartesian_product
+from utils import database_io
 
 import logging
 
@@ -19,7 +19,7 @@ log = logging.getLogger(os.path.basename(__file__))
 log.setLevel(logging.DEBUG)
 
 
-class DataDatabase(object):
+class Data_Database(object):
     '''
     The DataDatabase classed is used to create a database and write to different tables: a region table, a flux table for each region, and a conditions table.
     '''
@@ -29,11 +29,22 @@ class DataDatabase(object):
         '''
         Initializes the database engine and opens a connection to the database.
         
-        :param dbname: The name for the database (no need to add .db at the end)
+        :param dbname: The name for the database (add .db at the end)
         '''
-        
-        self.engine = sqlalchemy.engine.create_engine('sqlite:///%s.db' % dbname)
-        self.connection = self.engine.connect()
+
+        # Remove database if it exists
+
+        try:
+
+            os.remove(dbname)
+
+        except OSError:
+
+            pass
+
+        self.db = database_io.SqliteDatabase(dbname)
+
+        self.db.connect()
         
         
     def fill_reg(self, regfile):
@@ -70,7 +81,7 @@ class DataDatabase(object):
             series = pd.Series(strs, index=indices)
             
             reg_dataframe = pd.DataFrame.from_dict({'ds9_info': series})
-            reg_dataframe.to_sql("reg_table", self.connection, if_exists='replace', index_label='regID')
+            self.db.insert_dataframe(reg_dataframe, 'reg_table', index_label='regID')
             
             print(reg_dataframe)
             
@@ -207,11 +218,10 @@ class DataDatabase(object):
         return flux_errors
     
         
-    def _fill_flux(self, indices, headers_nobkgd, data_nobkgd, headers_orig, data_orig):
+    def _fill_flux(self, headers_nobkgd, data_nobkgd, headers_orig, data_orig):
         '''
         Fills the dataframe with the flux and the flux error for each region with the indices as the visit number.
-        
-        :param indices: An array of the indices for the dataframe, based on the number of visits
+
         :param headers_nobkgd: An array of the headers from the background-subtracted images from each of the visits
         :param data_nobkgd: An array of the flux data from the background-subtracted images from each of the visits
         :param headers_orig: An array of the headers from the original images from each of the visits
@@ -278,6 +288,7 @@ class DataDatabase(object):
         
         # Write the fluxes to the database
         print("Writing to database...\n")
+        dataframes = []
         
         #import pdb;pdb.set_trace()
         
@@ -291,20 +302,26 @@ class DataDatabase(object):
             flux_dataframe = pd.DataFrame(index=range(1,len(headers_nobkgd)+1), columns=['flux', 'err'])
             flux_dataframe['flux'] = region_fluxes[r]
             flux_dataframe['err'] = region_errs[r]
-            flux_dataframe.to_sql("flux_table_%i" % (r+1), self.connection, if_exists='replace', index_label='visitID')
-        
-        # Just to check if it's working
-        print(flux_dataframe)
+            dataframes.append(flux_dataframe)
+
+            # Insert many tables
+
+        with database_io.bulk_operation(self.db):
+
+            for r in range(0,num_regs):
+
+                if i % 100 == 0:
+                    print("Inserted table %i of %i" % (r+1, num_regs))
+
+                self.db.insert_dataframe(dataframes[r], 'flux_table_%i' % (r+1), commit=False)
         
         return None
-
         
         
-    def _fill_cond(self, indices, headers):
+    def _fill_cond(self, headers):
         '''
         Fills the dataframe with the conditions for each visit (seeing, duration, etc.). Seeing at 5000 angstrom (sigma)
-        
-        :param indices: An array of the indices for the dataframe, based on the number of visits
+
         :param headers: An array of the primary headers from each of the visits
         '''
         
@@ -323,7 +340,7 @@ class DataDatabase(object):
         
         # Write the seeings and durations to the dataframe
         cond_dataframe = pd.DataFrame.from_dict({'duration (s)': series1, 'seeing (")': series2})
-        cond_dataframe.to_sql("cond_table", self.connection, if_exists='replace', index_label='visitID')
+        self.db.insert_dataframe(cond_dataframe, 'cond_table')
         
         print(cond_dataframe)
             
@@ -343,9 +360,21 @@ class DataDatabase(object):
         headers_orig = []
         data_nobkgd = []
         data_orig = []
-        
+
+        # Collect all the visit files from the directory
+        files_set = []
+        for root, dirs, files in os.walk(path):
+
+            for name in files:
+                if 'bkgd' not in name and '.fits' in name:
+                    files_set.append(os.path.join(root, name))
+
+            for name in dirs:
+                if 'bkgd' not in name and '.fits' in name:
+                    files_set.append(os.path.join(root, name))
+
         # Collect all the necessary headers from each visit file
-        for f in os.listdir(path):
+        for f in files_set:
             
             headers_prim.append(pyfits.getheader(path + f, 0))
             headers_nobkgd.append(pyfits.getheader(path + f, 1))
@@ -353,12 +382,9 @@ class DataDatabase(object):
             headers_orig.append(pyfits.getheader(path + f, 3))
             data_orig.append(pyfits.getdata(path + f, 3))
         
-        # Fill the index array now that we know how many regions there were
-        indices = [range(1, len(headers_prim))]
-        
         # Call helper methods to fill in the fluxes and conditions for these visits
-        self._fill_flux(indices, headers_nobkgd, data_nobkgd, headers_orig, data_orig)
-        self._fill_cond(indices, headers_prim)
+        self._fill_flux(headers_nobkgd, data_nobkgd, headers_orig, data_orig)
+        self._fill_cond(headers_prim)
         
         return None
         
@@ -367,7 +393,17 @@ class DataDatabase(object):
         '''
         Closes the connection to the database.
         '''
-        
+
+        self.db.disconnect()
+
+        try:
+
+            os.remove(self.dbname)
+
+        except OSError:
+
+            pass
+
         self.connection.close()
         print("Closed successfully")
         
