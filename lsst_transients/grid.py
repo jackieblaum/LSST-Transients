@@ -2,7 +2,7 @@ from region import Region
 from utils.cartesian_product import cartesian_product
 from utils.pix2world import pix2world
 from astropy.coordinates.angle_utilities import angular_separation
-from create_db import Database
+from create_db_notpyregion.py import Data_Database
 
 import numpy as np
 import astropy.units as u
