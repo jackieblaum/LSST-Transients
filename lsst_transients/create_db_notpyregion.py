@@ -34,6 +34,7 @@ class Data_Database(object):
 
         # Remove database if it exists
 
+        '''
         try:
 
             os.remove(dbname)
@@ -41,6 +42,7 @@ class Data_Database(object):
         except OSError:
 
             pass
+        '''
 
         self.db = database_io.SqliteDatabase(dbname)
 
@@ -76,12 +78,12 @@ class Data_Database(object):
                 i += 1
             
             # Fill the index array now that we know how many regions there were
-            indices = [range(1, i)]
+            indices = range(1, i)
             
             series = pd.Series(strs, index=indices)
             
             reg_dataframe = pd.DataFrame.from_dict({'ds9_info': series})
-            self.db.insert_dataframe(reg_dataframe, 'reg_table', index_label='regID')
+            self.db.insert_dataframe(reg_dataframe, 'reg_table')
             
             print(reg_dataframe)
             
@@ -233,7 +235,8 @@ class Data_Database(object):
         visit_errs = []
         
         # Access the regions table in the database in order to find the number of regions
-        reg = pd.read_sql_table("reg_table", self.connection)
+        reg = self.db.get_table_as_dataframe('reg_table')
+
         num_regs = len(reg.index)
         
         # Loop through the visit files
@@ -304,7 +307,7 @@ class Data_Database(object):
             flux_dataframe['err'] = region_errs[r]
             dataframes.append(flux_dataframe)
 
-            # Insert many tables
+        # Insert many tables
 
         with database_io.bulk_operation(self.db):
 
@@ -353,7 +356,8 @@ class Data_Database(object):
 
         :param path: The path to folder with all visit files
         '''
-        
+
+        print("Collecting headers and data from the visit files...\n")
         # Arrays of headers and data. There will be one from each visit in the directory.
         headers_prim = []
         headers_nobkgd = []
