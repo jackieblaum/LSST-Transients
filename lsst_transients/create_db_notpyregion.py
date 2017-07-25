@@ -32,17 +32,7 @@ class Data_Database(object):
         :param dbname: The name for the database (add .db at the end)
         '''
 
-        # Remove database if it exists
-
-        '''
-        try:
-
-            os.remove(dbname)
-
-        except OSError:
-
-            pass
-        '''
+        assert os.path.exists(dbname), "Database %s does not exist" % dbname
 
         self.db = database_io.SqliteDatabase(dbname)
 
@@ -83,7 +73,7 @@ class Data_Database(object):
             series = pd.Series(strs, index=indices)
             
             reg_dataframe = pd.DataFrame.from_dict({'ds9_info': series})
-            self.db.insert_dataframe(reg_dataframe, 'reg_table')
+            self.db.insert_dataframe(reg_dataframe, 'reg_dataframe', commit=False)
             
             print(reg_dataframe)
             
@@ -219,7 +209,12 @@ class Data_Database(object):
 
         return flux_errors
     
-        
+    def _get_data(self, dtype, *args, **kwargs):
+
+        this_data = pyfits.getdata(*args, **kwargs)
+
+        return np.array(this_data, dtype=dtype)
+
     def _fill_flux(self, headers_nobkgd, data_nobkgd, headers_orig, data_orig):
         '''
         Fills the dataframe with the flux and the flux error for each region with the indices as the visit number.
@@ -235,7 +230,7 @@ class Data_Database(object):
         visit_errs = []
         
         # Access the regions table in the database in order to find the number of regions
-        reg = self.db.get_table_as_dataframe('reg_table')
+        reg = self.db.get_table_as_dataframe('reg_dataframe')
 
         num_regs = len(reg.index)
         
@@ -255,10 +250,13 @@ class Data_Database(object):
             
             # Get the fluxes for each region for the scaled images
             print("Scaled background-subtracted image\n")
-            fluxes_nobkgd = self._get_fluxes(reg, pyfits.getdata("nobkgd%i.fits" % i), pyfits.getheader("nobkgd%i.fits" % i,0))
+
+            fluxes_nobkgd = self._get_fluxes(reg, self._get_data(float, "nobkgd%i.fits" % i),
+                                             pyfits.getheader("nobkgd%i.fits" % i,0))
             
             print("\nScaled original image\n")
-            fluxes_orig = self._get_fluxes(reg, pyfits.getdata("orig%i.fits" % i), pyfits.getheader("orig%i.fits" % i,0))
+            fluxes_orig = self._get_fluxes(reg, self._get_data(float, "orig%i.fits" % i),
+                                           pyfits.getheader("orig%i.fits" % i,0))
             
             # Get the fluxes for each region for the unscaled images
             print("\nUnscaled background-subtracted image\n")
@@ -313,7 +311,7 @@ class Data_Database(object):
 
             for r in range(0,num_regs):
 
-                if i % 100 == 0:
+                if r % 100 == 0:
                     print("Inserted table %i of %i" % (r+1, num_regs))
 
                 self.db.insert_dataframe(dataframes[r], 'flux_table_%i' % (r+1), commit=False)
@@ -330,6 +328,7 @@ class Data_Database(object):
         
         seeings = []
         durations = []
+        dates = []
         visit_index = range(1, len(headers)+1)
         
         # Loop through the headers in order to read the seeing and duration for each visit
@@ -337,12 +336,15 @@ class Data_Database(object):
             
             durations.append(header['EXPTIME'])
             seeings.append(1)
+            dates.append(header['MJD-OBS'])
             
         series1 = pd.Series(durations, index=visit_index)
         series2 = pd.Series(seeings, index=visit_index)
+        series3 = pd.Series(dates, index=visit_index)
         
         # Write the seeings and durations to the dataframe
-        cond_dataframe = pd.DataFrame.from_dict({'duration (s)': series1, 'seeing (")': series2})
+        cond_dataframe = pd.DataFrame.from_dict({'duration (s)': series1, 'seeing (")': series2,
+                                                 'date (modified Julian)': series3})
         self.db.insert_dataframe(cond_dataframe, 'cond_table')
         
         print(cond_dataframe)
@@ -350,7 +352,7 @@ class Data_Database(object):
         return None
 
         
-    def fill_visits(self, path):
+    def fill_visits(self, path, flux, conditions):
         '''
         Fills the two dataframes that are indexed by visits. It first fills the flux table and then fills the conditions table.
 
@@ -377,18 +379,30 @@ class Data_Database(object):
                 if 'bkgd' not in name and '.fits' in name:
                     files_set.append(os.path.join(root, name))
 
-        # Collect all the necessary headers from each visit file
+        # Sort the visit files based on Modified Julian Time
+        times = []
         for f in files_set:
-            
-            headers_prim.append(pyfits.getheader(path + f, 0))
-            headers_nobkgd.append(pyfits.getheader(path + f, 1))
-            data_nobkgd.append(pyfits.getdata(path + f, 1))
-            headers_orig.append(pyfits.getheader(path + f, 3))
-            data_orig.append(pyfits.getdata(path + f, 3))
+            times.append(pyfits.getheader(f,0)['MJD-OBS'])
+
+        times_with_visits = zip(times, files_set)
+        times_with_visits.sort()
+
+        visits_sorted = [files_set for times, files_set in times_with_visits]
+
+        # Collect all the necessary headers from each visit file
+        for f in visits_sorted:
+
+            headers_prim.append(pyfits.getheader(f, 0))
+            headers_nobkgd.append(pyfits.getheader(f, 1))
+            data_nobkgd.append(pyfits.getdata(f, 1))
+            headers_orig.append(pyfits.getheader(f, 3))
+            data_orig.append(pyfits.getdata(f, 3))
         
         # Call helper methods to fill in the fluxes and conditions for these visits
-        self._fill_flux(headers_nobkgd, data_nobkgd, headers_orig, data_orig)
-        self._fill_cond(headers_prim)
+        if flux == "True":
+            self._fill_flux(headers_nobkgd, data_nobkgd, headers_orig, data_orig)
+        if conditions == "True":
+            self._fill_cond(headers_prim)
         
         return None
         
@@ -400,15 +414,6 @@ class Data_Database(object):
 
         self.db.disconnect()
 
-        try:
-
-            os.remove(self.dbname)
-
-        except OSError:
-
-            pass
-
-        self.connection.close()
         print("Closed successfully")
         
         return None

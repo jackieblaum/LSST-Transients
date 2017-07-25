@@ -38,7 +38,7 @@ def test_database_io():
 
     assert np.allclose(df.values, df2.values)
 
-    # Insert many tables
+    # Insert many tablesfrom
 
     with database_io.bulk_operation(db):
 

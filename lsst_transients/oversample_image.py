@@ -2,7 +2,7 @@ from scipy import ndimage
 import numpy
 
 
-def oversample(imageData, imageWCS, scaleFactor, threshold):
+def oversample(imageData, imageWCS, scaleFactor, threshold=None):
     '''
     
     :param imageData: Input array
@@ -17,21 +17,22 @@ def oversample(imageData, imageWCS, scaleFactor, threshold):
     if type(scaleFactor) == int or type(scaleFactor) == float:
         scaleFactor = [float(scaleFactor), float(scaleFactor)]
 
-    # Resample with constant interpolation
-    mask = ndimage.zoom(imageData, scaleFactor, order=0, mode='nearest')
+        # Resample with linear interpolation
+        scaledData = ndimage.zoom(imageData, scaleFactor, order=1, mode='nearest')
 
-    # Make a mask
-    idx = mask <= threshold
-    mask[idx] = 0
-    mask[~idx] = 1
+    if threshold != None:
+        # Resample with constant interpolation
+        mask = ndimage.zoom(imageData, scaleFactor, order=0, mode='nearest')
 
-    # Resample with linear interpolation
-    scaledData = ndimage.zoom(imageData, scaleFactor, order=1, mode='nearest')
+        # Make a mask
+        idx = mask <= threshold
+        mask[idx] = 0
+        mask[~idx] = 1
 
-    # Restore zeros
-    scaledData *= mask
+        # Restore zeros
+        scaledData *= mask
 
-    del mask
+        del mask
 
     # Take care of offset due to rounding in scaling image to integer pixel dimensions
     properDimensions = numpy.array(imageData.shape) * scaleFactor

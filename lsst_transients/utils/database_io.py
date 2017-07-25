@@ -175,7 +175,7 @@ class SqliteDatabase(object):
         :return:
         """
 
-        self.query("DELETE TABLE ?", table_name, fetch=False, commit=commit)
+        self.query("DROP TABLE ?", table_name, fetch=False, commit=commit)
 
     def insert_dataframe(self, dataframe, table_name, commit=True):
         """
