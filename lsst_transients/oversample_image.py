@@ -1,4 +1,5 @@
 from scipy import ndimage
+import scipy.misc
 import numpy
 
 
@@ -14,11 +15,7 @@ def oversample(imageData, imageWCS, scaleFactor, threshold=None):
     :return scaledWCS:
     '''
 
-    if type(scaleFactor) == int or type(scaleFactor) == float:
-        scaleFactor = [float(scaleFactor), float(scaleFactor)]
-
-        # Resample with linear interpolation
-        scaledData = ndimage.zoom(imageData, scaleFactor, order=1, mode='nearest')
+    scaledData = scipy.misc.imresize(imageData, float(scaleFactor), interp='bilinear', mode='F')
 
     if threshold != None:
         # Resample with constant interpolation
@@ -60,14 +57,14 @@ def oversample(imageData, imageWCS, scaleFactor, threshold=None):
             return {'data': scaledData, 'wcs': scaledWCS}
 
     CDMatrix = numpy.array([[CD11, CD12], [CD21, CD22]], dtype=numpy.float64)
-    scaleFactorMatrix = numpy.array([[1.0 / scaleFactor[0], 0], [0, 1.0 / scaleFactor[1]]])
+    scaleFactorMatrix = numpy.array([[1.0 / scaleFactor, 0], [0, 1.0 / scaleFactor]])
     scaledCDMatrix = numpy.dot(scaleFactorMatrix, CDMatrix)
 
     scaledWCS = imageWCS.copy()
     scaledWCS['NAXIS1'] = scaledData.shape[1]
     scaledWCS['NAXIS2'] = scaledData.shape[0]
-    scaledWCS['CRPIX1'] = oldCRPIX1 * scaleFactor[0] + offset[1]
-    scaledWCS['CRPIX2'] = oldCRPIX2 * scaleFactor[1] + offset[0]
+    scaledWCS['CRPIX1'] = oldCRPIX1 * scaleFactor + offset[1]
+    scaledWCS['CRPIX2'] = oldCRPIX2 * scaleFactor + offset[0]
     scaledWCS['CD1_1'] = scaledCDMatrix[0][0]
     scaledWCS['CD2_1'] = scaledCDMatrix[1][0]
     scaledWCS['CD1_2'] = scaledCDMatrix[0][1]
