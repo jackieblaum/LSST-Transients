@@ -193,7 +193,7 @@ class Data_Database(object):
         return fluxes
     
     
-    def _get_flux_errors(self, nobkgd_fluxes, orig_fluxes):
+    def _get_flux_errors(self, nobkgd_fluxes, orig_fluxes, mask_data):
         '''
         Computes the error of the flux for each region of the image.
         
@@ -204,8 +204,17 @@ class Data_Database(object):
         '''
         
         # The error for the flux of each region is given by the square root of the flux from the original image
-        
-        flux_errors = np.sqrt(np.absolute(orig_fluxes))
+        mask = (np.array(mask_data) == 0)
+        bkgd_level = np.median(orig_fluxes[mask])
+        bkgd_level_check = np.median(orig_fluxes[mask]-nobkgd_fluxes[mask])
+        assert np.isclose(bkgd_level, bkgd_level_check, rtol=0.05), "Background level is too different:" \
+                                                                    "\nOriginal with mask: %f\n " \
+                                                                    "Original with mask minus background-subtracted: %f" \
+                                                                    % (bkgd_level, bkgd_level_check)
+
+        bkgd_errors = np.std(orig_fluxes[mask])
+
+        flux_errors = np.sqrt(orig_fluxes + bkgd_errors**2)
 
         return flux_errors
     
@@ -215,7 +224,7 @@ class Data_Database(object):
 
         return np.array(this_data, dtype=dtype)
 
-    def _fill_flux(self, headers_nobkgd, data_nobkgd, headers_orig, data_orig):
+    def _fill_flux(self, headers_nobkgd, data_nobkgd, headers_orig, data_orig, headers_masks, data_masks):
         '''
         Fills the dataframe with the flux and the flux error for each region with the indices as the visit number.
 
@@ -243,10 +252,13 @@ class Data_Database(object):
             scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], 2)
             
             scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], 2)
+
+            scaled_data_masks, scaled_wcs_masks = oversample(data_masks[i], headers_masks[i], 2)
             
             # Write the oversampled data to a FITS file
             pyfits.writeto("nobkgd%i.fits" % i, scaled_data_nobkgd, header=scaled_wcs_nobkgd, clobber=True)
             pyfits.writeto("orig%i.fits" % i, scaled_data_orig, header=scaled_wcs_orig, clobber=True)
+            pyfits.writeto("mask%i.fits" % i, scaled_data_masks, header=scaled_wcs_masks, clobber=True)
             
             # Get the fluxes for each region for the scaled images
             print("Scaled background-subtracted image\n")
@@ -257,6 +269,10 @@ class Data_Database(object):
             print("\nScaled original image\n")
             fluxes_orig = self._get_fluxes(reg, self._get_data(float, "orig%i.fits" % i),
                                            pyfits.getheader("orig%i.fits" % i,0))
+
+            print("\nScaled mask image\n")
+            fluxes_mask = self._get_fluxes(reg, self._get_data(float, "mask%i.fits" % i),
+                                           pyfits.getheader("mask%i.fits" % i,0))
             
             # Get the fluxes for each region for the unscaled images
             print("\nUnscaled background-subtracted image\n")
@@ -264,6 +280,9 @@ class Data_Database(object):
             
             print("\nUnscaled original image\n")
             fluxes_orig_unscaled = self._get_fluxes(reg, data_orig[i], headers_orig[i])
+
+            print("\nUnscaled mask image\n")
+            fluxes_mask_unscaled = self._get_fluxes(reg, data_masks[i], headers_masks[i])
             
             # Normalize the scaled images
             norm_factor = sum(fluxes_nobkgd) / sum(fluxes_nobkgd_unscaled)
@@ -272,12 +291,15 @@ class Data_Database(object):
             fluxes_nobkgd /= norm_factor
            
             norm_factor = sum(fluxes_orig) / sum(fluxes_orig_unscaled)
-            print("\nnormalization factor (original): %f\n\n\n" % norm_factor)
+            print("\nnormalization factor (original): %f\n" % norm_factor)
             
             fluxes_orig /= norm_factor
+
+            norm_factor = sum(fluxes_mask) / sum(fluxes_mask_unscaled)
+            print("\nnormalization factor (mask): %f\n\n\n" % norm_factor)
             
             # Use the helper method to find the errors for the flux in each region
-            flux_errors_nobkgd = self._get_flux_errors(fluxes_nobkgd, fluxes_orig)
+            flux_errors_nobkgd = self._get_flux_errors(fluxes_nobkgd, fluxes_orig, fluxes_mask)
             
             # An array that stores the fluxes and flux errors for each region for each visit.
             visit_fluxes.append(fluxes_nobkgd)
@@ -364,6 +386,8 @@ class Data_Database(object):
         headers_prim = []
         headers_nobkgd = []
         headers_orig = []
+        headers_masks = []
+        data_masks = []
         data_nobkgd = []
         data_orig = []
 
@@ -395,12 +419,14 @@ class Data_Database(object):
             headers_prim.append(pyfits.getheader(f, 0))
             headers_nobkgd.append(pyfits.getheader(f, 1))
             data_nobkgd.append(pyfits.getdata(f, 1))
+            data_masks.append(pyfits.getdata(f, 2))
+            headers_masks.append(pyfits.getheader(f, 2))
             headers_orig.append(pyfits.getheader(f, 3))
             data_orig.append(pyfits.getdata(f, 3))
         
         # Call helper methods to fill in the fluxes and conditions for these visits
         if flux == "True":
-            self._fill_flux(headers_nobkgd, data_nobkgd, headers_orig, data_orig)
+            self._fill_flux(headers_nobkgd, data_nobkgd, headers_orig, data_orig, headers_masks, data_masks)
         if conditions == "True":
             self._fill_cond(headers_prim)
         
