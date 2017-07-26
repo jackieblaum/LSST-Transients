@@ -1,9 +1,11 @@
 import pandas as pd
-import astropy.io.fits as pyfits
 import numpy as np
 import os
 import re
+import logging
+
 import astropy.units as u
+import astropy.io.fits as pyfits
 
 from region import Region
 from astropy import wcs
@@ -12,7 +14,6 @@ from oversample_image import oversample
 from utils.cartesian_product import cartesian_product
 from utils import database_io
 
-import logging
 
 logging.basicConfig(format="%(asctime)s %(message)s")
 log = logging.getLogger(os.path.basename(__file__))
@@ -171,16 +172,17 @@ class Data_Database(object):
         
         :return fluxes: An array of the fluxes for each region in the image
         '''
-        
-        fluxes = []
+
         num_regs = len(reg.index)
+
+        fluxes = np.zeros(num_regs)
         
         log.info("Measuring flux for each region\n")
         
         w = wcs.WCS(header)
         max_coords = [(header['NAXIS1'], header['NAXIS2'])]       
 
-        for i in range(0, num_regs):
+        for i in range(num_regs):
                 
             if (i+1) % 1000 == 0:
                     
@@ -188,8 +190,8 @@ class Data_Database(object):
                  
             # Call the helper method to get the sum of the flux from all the pixels in the region  
             add = self._sum_flux(w, reg.get_value(i, "ds9_info"), data, max_coords)
-            fluxes.append(add)
-        #sys.exit(-1)
+            fluxes[i] = add
+
         return fluxes
     
     
@@ -242,7 +244,7 @@ class Data_Database(object):
         reg = self.db.get_table_as_dataframe('reg_dataframe')
 
         num_regs = len(reg.index)
-        
+
         # Loop through the visit files
         for i in range(0, len(headers_nobkgd)):
             
@@ -250,30 +252,26 @@ class Data_Database(object):
             
             # Oversample both the background-subtracted and the original images.
             scale_factor = 2
+
             scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], scale_factor)
-            
+
             scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], scale_factor)
 
             scaled_data_masks, scaled_wcs_masks = oversample(data_masks[i], headers_masks[i], scale_factor)
             
-            # Write the oversampled data to a FITS file
-            pyfits.writeto("nobkgd%i.fits" % i, scaled_data_nobkgd, header=scaled_wcs_nobkgd, clobber=True)
-            pyfits.writeto("orig%i.fits" % i, scaled_data_orig, header=scaled_wcs_orig, clobber=True)
-            pyfits.writeto("mask%i.fits" % i, scaled_data_masks, header=scaled_wcs_masks, clobber=True)
-            
             # Get the fluxes for each region for the scaled images
             print("Scaled background-subtracted image\n")
 
-            fluxes_nobkgd = self._get_fluxes(reg, self._get_data(float, "nobkgd%i.fits" % i),
-                                             pyfits.getheader("nobkgd%i.fits" % i,0))
+            fluxes_nobkgd = self._get_fluxes(reg, scaled_data_nobkgd,
+                                             scaled_wcs_nobkgd)
             
             print("\nScaled original image\n")
-            fluxes_orig = self._get_fluxes(reg, self._get_data(float, "orig%i.fits" % i),
-                                           pyfits.getheader("orig%i.fits" % i,0))
+            fluxes_orig = self._get_fluxes(reg, scaled_data_orig,
+                                           scaled_wcs_nobkgd)
 
             print("\nScaled mask image\n")
-            fluxes_mask = self._get_fluxes(reg, self._get_data(float, "mask%i.fits" % i),
-                                           pyfits.getheader("mask%i.fits" % i,0))
+            fluxes_mask = self._get_fluxes(reg, scaled_data_masks,
+                                           scaled_wcs_nobkgd)
 
             # Normalize the scaled images
             norm_factor = scale_factor * 2
