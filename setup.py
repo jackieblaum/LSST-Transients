@@ -27,7 +27,8 @@ setup(
                       'scipy',
                       'astropy',
                       'pandas',
-                      'SQLAlchemy'],
+                      'SQLAlchemy',
+                      'Pillow'],
 
     scripts=scripts,
 
