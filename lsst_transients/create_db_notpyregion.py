@@ -248,12 +248,13 @@ class Data_Database(object):
             
             print("File %i:\n\nOversampling...\n" % i)
             
-            # Oversample both the background-subtracted and the original images.            
-            scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], 2)
+            # Oversample both the background-subtracted and the original images.
+            scale_factor = 2
+            scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], scale_factor)
             
-            scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], 2)
+            scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], scale_factor)
 
-            scaled_data_masks, scaled_wcs_masks = oversample(data_masks[i], headers_masks[i], 2)
+            scaled_data_masks, scaled_wcs_masks = oversample(data_masks[i], headers_masks[i], scale_factor)
             
             # Write the oversampled data to a FITS file
             pyfits.writeto("nobkgd%i.fits" % i, scaled_data_nobkgd, header=scaled_wcs_nobkgd, clobber=True)
@@ -273,30 +274,17 @@ class Data_Database(object):
             print("\nScaled mask image\n")
             fluxes_mask = self._get_fluxes(reg, self._get_data(float, "mask%i.fits" % i),
                                            pyfits.getheader("mask%i.fits" % i,0))
-            
-            # Get the fluxes for each region for the unscaled images
-            print("\nUnscaled background-subtracted image\n")
-            fluxes_nobkgd_unscaled = self._get_fluxes(reg, data_nobkgd[i], headers_nobkgd[i])
-            
-            print("\nUnscaled original image\n")
-            fluxes_orig_unscaled = self._get_fluxes(reg, data_orig[i], headers_orig[i])
 
-            print("\nUnscaled mask image\n")
-            fluxes_mask_unscaled = self._get_fluxes(reg, data_masks[i], headers_masks[i])
-            
             # Normalize the scaled images
-            norm_factor = sum(fluxes_nobkgd) / sum(fluxes_nobkgd_unscaled)
+            norm_factor = scale_factor * 2
             print("\nnormalization factor (background-subtracted): %f" % norm_factor)
             
             fluxes_nobkgd /= norm_factor
-           
-            norm_factor = sum(fluxes_orig) / sum(fluxes_orig_unscaled)
-            print("\nnormalization factor (original): %f\n" % norm_factor)
             
             fluxes_orig /= norm_factor
 
-            norm_factor = sum(fluxes_mask) / sum(fluxes_mask_unscaled)
-            print("\nnormalization factor (mask): %f\n\n\n" % norm_factor)
+
+            fluxes_mask /= norm_factor
             
             # Use the helper method to find the errors for the flux in each region
             flux_errors_nobkgd = self._get_flux_errors(fluxes_nobkgd, fluxes_orig, fluxes_mask)
