@@ -205,7 +205,7 @@ class Data_Database(object):
         
         # The error for the flux of each region is given by the square root of the flux from the original image
         
-        flux_errors = np.sqrt(orig_fluxes)
+        flux_errors = np.sqrt(np.absolute(orig_fluxes))
 
         return flux_errors
     
@@ -240,9 +240,9 @@ class Data_Database(object):
             print("File %i:\n\nOversampling...\n" % i)
             
             # Oversample both the background-subtracted and the original images.            
-            scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], 2, 0)
+            scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], 2)
             
-            scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], 2, 0)
+            scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], 2)
             
             # Write the oversampled data to a FITS file
             pyfits.writeto("nobkgd%i.fits" % i, scaled_data_nobkgd, header=scaled_wcs_nobkgd, clobber=True)

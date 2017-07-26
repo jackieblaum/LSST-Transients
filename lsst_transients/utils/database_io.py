@@ -175,7 +175,11 @@ class SqliteDatabase(object):
         :return:
         """
 
-        self.query("DROP TABLE ?", table_name, fetch=False, commit=commit)
+        # sqlite3 does not allow to use the ? substitution
+        # for table names, so we need to do it manually
+        table_name = table_name.split(" ")[0]
+
+        self.query("DROP TABLE %s" % table_name, fetch=False, commit=commit)
 
     def insert_dataframe(self, dataframe, table_name, commit=True):
         """
