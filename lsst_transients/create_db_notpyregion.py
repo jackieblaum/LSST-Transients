@@ -244,6 +244,7 @@ class Data_Database(object):
         
         :param nobkgd_fluxes: A list of fluxes for each region for the background subtracted image
         :param orig_fluxes: A list of fluxes for each region for the original image (before subtraction)
+        :param mask_data: A list of fluxes for each region for the mask image
         
         :return flux_errors: An array of flux errors for the background subtracted image, one error for each region
         '''
@@ -409,6 +410,9 @@ class Data_Database(object):
         Fills the dataframes that are indexed by visits. It first fills the flux tables and then fills the conditions table.
 
         :param path: The path to folder with all visit files
+        :param flux: True if the flux tables should be filled, False otherwise
+        :param conditions: True if the conditions table should be filled, False otherwise
+        :param chunk_size: The number of visit files to loop through at a time, default=10
 
         :return None
         '''
