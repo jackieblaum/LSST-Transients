@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 
 from astropy.stats import bayesian_blocks
 from lsst_transients.create_db_notpyregion import Data_Database
@@ -66,34 +67,37 @@ class BayesianBlocks(object):
 
         # Get the array of times for the visits from the database
         conditions = self.database.db.get_table_as_dataframe('cond_table')
+
+        conditions['date (modified Julian)'] = np.array(conditions['date (modified Julian)'], float)
         times = conditions['date (modified Julian)'].values
 
-        # Get the array of flux dataframes from the database
-        print("Getting the fluxes from each data frame...")
-        flux_tables = []
+        # Loop over all the regions and run Bayesian_Blocks on each of them
+        print("Running the Bayesian Block algorithm on each region...")
+
+        # We will plot later
+        fig, subs = plt.subplots(1, self.num_regs, figsize=(75, 10))
 
         for i in range(1, self.num_regs+1):
 
             if i%100 == 0:
                 print("Processed table %i of %i" % (i, self.num_regs))
 
-            flux_tables.append(self.database.db.get_table_as_dataframe('flux_table_%i' % i))
+            df = self.database.db.get_table_as_dataframe('flux_table_%i' % i)
 
-        # We will plot later
-        fig, subs = plt.subplots(1,self.num_regs,figsize=(75,10))
+            # Make sure that both columns are floats
+            df['flux'] = np.array(df['flux'], float)
+            df['err'] = np.array(df['err'], float)
 
-        # Loop over all the regions and run Bayesian_Blocks on each of them
-        print("Running the Bayesian Block algorithm on each region...")
+            # flux_tables.append(df)
 
-        for i in range(1, self.num_regs+1):
-
-            edges = bayesian_blocks(t=times, x=flux_tables[i-1]['flux'].values, sigma=flux_tables[i-1]['err'].values, fitness='measures')
+            edges = bayesian_blocks(t=times, x=df['flux'].values, sigma=df['err'].values, fitness='measures', p0=10**(-3))
             print("Completed region %i of %i" % (i, self.num_regs))
             print edges
 
             # Plot and save
-            subs[i-1].errorbar(times, flux_tables[i-1]['flux'].values, yerr=flux_tables[i-1]['err'].values, fmt='.')
+            subs[i-1].errorbar(times, df['flux'].values, yerr=df['err'].values, fmt='.')
             subs[i-1].set_title('reg%i' % i)
+            subs[i-1].set_ylim([-3000,3000])
 
             for j in range(0,len(edges)):
                 subs[i-1].axvline(edges.item(j), linestyle='--')
