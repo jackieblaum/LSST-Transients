@@ -102,7 +102,7 @@ class Data_Database(object):
                 if r % 1000 == 0:
                     print("Initialized flux table %i of %i" % (r+1, num_regs))
 
-                flux_dataframe = pd.DataFrame(columns=['flux', 'err'])
+                flux_dataframe = pd.DataFrame(columns=['flux', 'err'], dtype=float)
                 self.db.insert_dataframe(flux_dataframe, 'flux_table_%i' % (r + 1), commit=False)
 
         return None
@@ -115,7 +115,7 @@ class Data_Database(object):
         :return: None
         '''
 
-        cond_dataframe = pd.DataFrame(columns=['date (modified Julian)','duration (s)','seeing (")'])
+        cond_dataframe = pd.DataFrame(columns=['date (modified Julian)','duration (s)','seeing (")'], dtype=float)
         self.db.insert_dataframe(cond_dataframe, 'cond_table')
 
         return None
@@ -199,8 +199,8 @@ class Data_Database(object):
         reg_data = reg_data.reshape(reg_data.size,)
 
         # Add the fluxes of the pixels within the bounding box
-        sum_flux = np.sum(reg_data[in_region])
-        
+        sum_flux = float(np.sum(reg_data[in_region]))
+
         return sum_flux
     
         
@@ -298,7 +298,7 @@ class Data_Database(object):
         # Loop through the visit files
         for i in range(0, len(headers_nobkgd)):
             
-            print("File %i:\n\nOversampling...\n" % i)
+            print("File %i:\n\nOversampling...\n" % (i+1))
             
             # Oversample the background-subtracted, the original images, and the mask images.
             scale_factor = 2
@@ -325,7 +325,7 @@ class Data_Database(object):
 
             # Normalize the scaled images
             norm_factor = scale_factor * 2
-            print("\nnormalization factor (background-subtracted): %f" % norm_factor)
+            print("\nnormalization factor (background-subtracted): %f\n" % norm_factor)
             
             fluxes_nobkgd /= norm_factor
             
@@ -390,9 +390,9 @@ class Data_Database(object):
         # Loop through the headers in order to read the seeing, duration, and date for each visit
         for header in headers:
             
-            durations.append(header['EXPTIME'])
-            seeings.append(1)
-            dates.append(header['MJD-OBS'])
+            durations.append(float(header['EXPTIME']))
+            seeings.append(1.00)
+            dates.append(float(header['MJD-OBS']))
             
         series1 = pd.Series(durations, index=visit_index)
         series2 = pd.Series(seeings, index=visit_index)
@@ -446,7 +446,7 @@ class Data_Database(object):
         # Loop through in chunks of visits
         for i, chunk in enumerate(chunker(visits_sorted, chunk_size)):
 
-            print("Processing chunk %i of %i..." % (i, len(visits_sorted)//chunk_size))
+            print("Processing chunk %i of %i..." % (i+1, len(visits_sorted)//chunk_size+1))
 
             # Arrays of headers and data. There will be one from each visit in the directory.
             headers_prim = []
