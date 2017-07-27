@@ -6,6 +6,16 @@ from pandas.io.sql import get_schema as pd_get_schema
 from file_io import sanitize_filename
 
 
+# Translation table for array types
+# (from numpy dtype to Sqlite3 type)
+
+array_types = {'float32': 'REAL',
+               'float64': 'REAL',
+               'float16': 'REAL',
+               'int64': 'INTEGER',
+               'int32': 'INTEGER'}
+
+
 @contextlib.contextmanager
 def bulk_operation(db_instance):
     """
@@ -191,8 +201,18 @@ class SqliteDatabase(object):
         :return:
         """
 
+        # Figure out the appropriate dtype conversion
+        conv = {}
+
+        for column in dataframe.columns.values:
+
+            conv[column] = array_types[str(dataframe[column].dtype)]
+
         # Get table definition from Pandas
-        table_definition = pd_get_schema(dataframe, table_name, flavor='sqlite')
+        table_definition = pd_get_schema(dataframe, table_name, dtype=conv)
+
+        print("Creating table with this definition:")
+        print(table_definition)
 
         # Create table (but do not commit yet)
 
