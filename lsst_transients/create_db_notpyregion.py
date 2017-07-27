@@ -22,18 +22,22 @@ log.setLevel(logging.DEBUG)
 
 class Data_Database(object):
     '''
-    The DataDatabase classed is used to create a database and write to different tables: a region table, a flux table for each region, and a conditions table.
+    The Data_Database class is used to create a database and write to different tables: a region table, a flux table for
+    each region, and a conditions table.
     '''
     
     
-    def __init__(self, dbname):
+    def __init__(self, dbname, first=True):
         '''
-        Initializes the database engine and opens a connection to the database.
+        Initializes the database and opens a connection to the database.
         
-        :param dbname: The name for the database (add .db at the end)
+        :param dbname: The name for the database
+        :param first: If the database has not yet been created, True, False otherwise
         '''
 
-        assert os.path.exists(dbname), "Database %s does not exist" % dbname
+        if first==False:
+
+            assert os.path.exists(dbname), "Database %s does not exist" % dbname
 
         self.db = database_io.SqliteDatabase(dbname)
 
@@ -42,44 +46,80 @@ class Data_Database(object):
         
     def fill_reg(self, regfile):
         '''
-        #Fills the database with the string for each region as seen in DS9 and regID as the indices.
+        Fills the database with the string for each region as seen in DS9.
         
         :param regfile: Region file created using lsst_grid_generator_shapes.py
+
+        :return The number of regions
         '''
         
         with open(regfile) as f:
             
-            # A counter for the number of lines in the file. It also allows us to skip the first line of the region file, which does not specify a region.
-            i = 0
-            
             # An array of strings where we will store the string of each region as it appears in the DS9 file.
             strs = []
             
-            for line in f:
+            for i, line in enumerate(f):
                 
                 if i==0:
+
                     pass
                 
                 else:
+
                     #Store the string with the corresponding region in the array after trimming the "\n" off the end.
                     trimmed = line[0:len(line)-1]
                     strs.append(trimmed)
-                    
-                # Move on to the next region
-                i += 1
             
             # Fill the index array now that we know how many regions there were
-            indices = range(1, i)
+            indices = range(1, i+1)
             
             series = pd.Series(strs, index=indices)
             
             reg_dataframe = pd.DataFrame.from_dict({'ds9_info': series})
-            self.db.insert_dataframe(reg_dataframe, 'reg_dataframe', commit=False)
+            self.db.insert_dataframe(reg_dataframe, 'reg_dataframe')
             
             print(reg_dataframe)
             
-            return None
-               
+            return len(indices)
+
+
+    def init_flux_tables(self, num_regs):
+        '''
+        Inserts empty flux tables into the database.
+
+        :param num_regs: Number of regions, and thus the number of flux tables
+
+        :return None
+        '''
+        # Write the fluxes to the database
+
+        # Insert many tables
+
+        with database_io.bulk_operation(self.db):
+
+            for r in range(0, num_regs):
+
+                if r % 1000 == 0:
+                    print("Initialized flux table %i of %i" % (r+1, num_regs))
+
+                flux_dataframe = pd.DataFrame(columns=['flux', 'err'])
+                self.db.insert_dataframe(flux_dataframe, 'flux_table_%i' % (r + 1), commit=False)
+
+        return None
+
+
+    def init_cond_table(self):
+        '''
+        Inserts an empty conditions table into the database.
+
+        :return: None
+        '''
+
+        cond_dataframe = pd.DataFrame(columns=['date (modified Julian)','duration (s)','seeing (")'])
+        self.db.insert_dataframe(cond_dataframe, 'cond_table')
+
+        return None
+
                
     def _get_distances(self, x, y, x2, y2):
         '''
@@ -109,7 +149,8 @@ class Data_Database(object):
         
         :return sum_flux: The total flux for this region
         '''
-        
+
+        # Get info about the region from the DS9 string
         split = re.split("[, (\")]+", ds9_string)
         shape = split[0]
         ra = float(split[1])
@@ -117,7 +158,6 @@ class Data_Database(object):
         diameter = float(split[3]) * 2
         
         # Get the diameter in pixels assuming that the diameter is the same in WCS for all regions
-        
         pixel_scale = proj_plane_pixel_scales(w)
         assert np.isclose(pixel_scale[0], pixel_scale[1], rtol=1e-2), "Pixel scale is different between X and Y direction"
         pixel_scale_with_units = pixel_scale[0] * u.Unit(w.wcs.cunit[0])
@@ -130,22 +170,23 @@ class Data_Database(object):
                 rotation = split[5]
      
         # Find the smallest square around the region
-        
         x_and_y = w.wcs_world2pix([[ra, dec]], 0)
         x_and_y = str(x_and_y).replace(']','').replace('[','').split()
         x = np.floor(float(x_and_y[0]))
         y = np.floor(float(x_and_y[1]))
-        
+
+        # Make a region object given the information found previously
         reg = Region(x, y, diameter_pix, shape)
         
         # Maximum pixel coordinates
         max_coords = str(max_coords[0]).replace('(','').replace(')','').split()
         max_x = max_coords[0].replace(',','')
         max_y = max_coords[1]
-        
+
+        # Find the bounding box around the region
         corner1, corner2, corner3, corner4 = reg.get_boundingbox(max_x, max_y)
 
-        #in_bounding_box_x, in_bounding_box_y = np.where(data_wcs[corner1[0]:corner3[0], corner1[1]:corner2[1]])
+        # Get the pixel coordinates of the pixels within the bounding box
         in_bounding_box_x = np.arange(corner1[0], corner3[0])
         in_bounding_box_y = np.arange(corner1[1], corner2[1])
         cart_prod = cartesian_product([in_bounding_box_x, in_bounding_box_y]).T
@@ -157,6 +198,7 @@ class Data_Database(object):
         reg_data = data.swapaxes(0,1)[corner1[0]:corner3[0], corner1[1]:corner2[1]]
         reg_data = reg_data.reshape(reg_data.size,)
 
+        # Add the fluxes of the pixels within the bounding box
         sum_flux = np.sum(reg_data[in_region])
         
         return sum_flux
@@ -173,10 +215,11 @@ class Data_Database(object):
         :return fluxes: An array of the fluxes for each region in the image
         '''
 
+        # Get the number of regions and use this number to initialize an array that will store the fluxes for each region
         num_regs = len(reg.index)
-
         fluxes = np.zeros(num_regs)
-        
+
+        # Add the fluxes within each region by calling _sum_flux
         log.info("Measuring flux for each region\n")
         
         w = wcs.WCS(header)
@@ -205,7 +248,7 @@ class Data_Database(object):
         :return flux_errors: An array of flux errors for the background subtracted image, one error for each region
         '''
         
-        # The error for the flux of each region is given by the square root of the flux from the original image
+        # Find the error on the background
         mask = (np.array(mask_data) == 0)
         bkgd_level = np.median(orig_fluxes[mask])
         bkgd_level_check = np.median(orig_fluxes[mask]-nobkgd_fluxes[mask])
@@ -216,15 +259,18 @@ class Data_Database(object):
 
         bkgd_errors = np.std(orig_fluxes[mask])
 
+        # Propagate the error to find the flux errors
         flux_errors = np.sqrt(orig_fluxes + bkgd_errors**2)
 
         return flux_errors
+
     
     def _get_data(self, dtype, *args, **kwargs):
 
         this_data = pyfits.getdata(*args, **kwargs)
 
         return np.array(this_data, dtype=dtype)
+
 
     def _fill_flux(self, headers_nobkgd, data_nobkgd, headers_orig, data_orig, headers_masks, data_masks):
         '''
@@ -234,15 +280,18 @@ class Data_Database(object):
         :param data_nobkgd: An array of the flux data from the background-subtracted images from each of the visits
         :param headers_orig: An array of the headers from the original images from each of the visits
         :param data_orig: An array of the flux data from the original images from each of the visits
+        :param headers_masks: An array of the headers from the mask images from each of the visits
+        :param data_masks: An array of the flux data from the mask images from each of the visits
+
+        :return None
         '''
     
-        # An array for all the visits that will store arrays of fluxes and flux errors for each region
+        # Arrays for all the visits that will store arrays of fluxes and flux errors for each region
         visit_fluxes = []
         visit_errs = []
         
         # Access the regions table in the database in order to find the number of regions
         reg = self.db.get_table_as_dataframe('reg_dataframe')
-
         num_regs = len(reg.index)
 
         # Loop through the visit files
@@ -250,7 +299,7 @@ class Data_Database(object):
             
             print("File %i:\n\nOversampling...\n" % i)
             
-            # Oversample both the background-subtracted and the original images.
+            # Oversample the background-subtracted, the original images, and the mask images.
             scale_factor = 2
 
             scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], scale_factor)
@@ -281,13 +330,12 @@ class Data_Database(object):
             
             fluxes_orig /= norm_factor
 
-
             fluxes_mask /= norm_factor
             
             # Use the helper method to find the errors for the flux in each region
             flux_errors_nobkgd = self._get_flux_errors(fluxes_nobkgd, fluxes_orig, fluxes_mask)
             
-            # An array that stores the fluxes and flux errors for each region for each visit.
+            # Arrays store the fluxes and flux errors for each region for each visit.
             visit_fluxes.append(fluxes_nobkgd)
             visit_errs.append(flux_errors_nobkgd)
         
@@ -304,14 +352,13 @@ class Data_Database(object):
             if (r+1) % 100 == 0:
                     
                 log.info("Processed region %i of %i" %(r+1, num_regs))
-                
-            
-            flux_dataframe = pd.DataFrame(index=range(1,len(headers_nobkgd)+1), columns=['flux', 'err'])
+
+            flux_dataframe = pd.DataFrame(columns=['flux', 'err'])
             flux_dataframe['flux'] = region_fluxes[r]
             flux_dataframe['err'] = region_errs[r]
             dataframes.append(flux_dataframe)
 
-        # Insert many tables
+        # Insert many tables that will be committed when the database is disconnected.
 
         with database_io.bulk_operation(self.db):
 
@@ -320,16 +367,18 @@ class Data_Database(object):
                 if r % 100 == 0:
                     print("Inserted table %i of %i" % (r+1, num_regs))
 
-                self.db.insert_dataframe(dataframes[r], 'flux_table_%i' % (r+1), commit=False)
+                self.db.append_dataframe_to_table(dataframes[r], 'flux_table_%i' % (r+1), commit=False)
         
         return None
         
         
     def _fill_cond(self, headers):
         '''
-        Fills the dataframe with the conditions for each visit (seeing, duration, etc.). Seeing at 5000 angstrom (sigma)
+        Fills the dataframe with the conditions for each visit (seeing, duration, and date). Seeing at 5000 angstrom (sigma)
 
         :param headers: An array of the primary headers from each of the visits
+
+        :return None
         '''
         
         seeings = []
@@ -337,7 +386,7 @@ class Data_Database(object):
         dates = []
         visit_index = range(1, len(headers)+1)
         
-        # Loop through the headers in order to read the seeing and duration for each visit
+        # Loop through the headers in order to read the seeing, duration, and date for each visit
         for header in headers:
             
             durations.append(header['EXPTIME'])
@@ -349,20 +398,19 @@ class Data_Database(object):
         series3 = pd.Series(dates, index=visit_index)
         
         # Write the seeings and durations to the dataframe
-        cond_dataframe = pd.DataFrame.from_dict({'duration (s)': series1, 'seeing (")': series2,
-                                                 'date (modified Julian)': series3})
-        self.db.insert_dataframe(cond_dataframe, 'cond_table')
-        
-        print(cond_dataframe)
+        cond_dataframe = pd.DataFrame.from_dict({'duration (s)': series1, 'seeing (")': series2, 'date (modified Julian)': series3})
+        self.db.append_dataframe_to_table(cond_dataframe, 'cond_table')
             
         return None
 
         
     def fill_visits(self, path, flux, conditions, chunk_size=10):
         '''
-        Fills the two dataframes that are indexed by visits. It first fills the flux table and then fills the conditions table.
+        Fills the dataframes that are indexed by visits. It first fills the flux tables and then fills the conditions table.
 
         :param path: The path to folder with all visit files
+
+        :return None
         '''
 
         print("Collecting headers and data from the visit files...\n")
@@ -391,9 +439,12 @@ class Data_Database(object):
 
         # Collect all the necessary headers from each visit file
 
-        # Arrays of headers and data. There will be one from each visit in the directory.
-        for chunk in chunker(visits_sorted, chunk_size):
+        # Loop through in chunks of visits
+        for i, chunk in enumerate(chunker(visits_sorted, chunk_size)):
 
+            print("Processing chunk %i of %i..." % (i, len(visits_sorted)//chunk_size))
+
+            # Arrays of headers and data. There will be one from each visit in the directory.
             headers_prim = []
             headers_nobkgd = []
             headers_orig = []
@@ -426,8 +477,11 @@ class Data_Database(object):
     def close(self):
         '''
         Closes the connection to the database.
+
+        :return None
         '''
 
+        # Disconnecting the database writes any uncommitted information to the database
         self.db.disconnect()
 
         print("Closed successfully")
