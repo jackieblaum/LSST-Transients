@@ -14,6 +14,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
         
-    db = Data_Database("%s.db" % args.name)
+    db = Data_Database("%s.db" % args.name, first=False)
     db.fill_visits(args.path, args.flux, args.conditions)
     db.close()

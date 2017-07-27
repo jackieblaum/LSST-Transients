@@ -12,30 +12,35 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--input', type=str, help='Input filename', required=True)
     parser.add_argument('-o', '--output', type=str, help='Output filename', required=True)
     parser.add_argument('-d', '--diameter', type=float, help='Length of the sides or diameter of the regions in pixels', required=True)
-    parser.add_argument('-f', '--fraction', type=float, help='Fraction of the region for which they overlap',
-                        required=True)
+    parser.add_argument('-f', '--fraction', type=float, help='Fraction of the region for which they overlap', required=True)
     parser.add_argument('-s', '--shape', type=str, help='Either circle or square regions', required=True)
+    parser.add_argument('-n', '--name', type=str, help='Name of the database', required=True)
 
     args = parser.parse_args()
 
     # Open the headers from the fits file inputted by the user
+
+    # Primary header
     header = pyfits.getheader(args.input, 0)
+
+    # Header of the background-subtracted image
     header2 = pyfits.getheader(args.input, 1)
 
-    # Set variables by reading from the header
+    # Set pixel variables by reading from the header
     max_pix_x = header2['NAXIS1']
     max_pix_y = header2['NAXIS2']
     center_pix_x = max_pix_x / 2
     center_pix_y = max_pix_y / 2
-	
+
+	# Some images might be rotated
     if header['ROTANG']:
         rotation_angle = header['ROTANG']
     else:
         rotation_angle = 0
 
-    # Generate the grid
+    # Generate the grid of regions
     grid = Grid(center_pix_x, center_pix_y, 1, max_pix_x, 1, max_pix_y, args.fraction, args.diameter, args.shape)
-    angular_distance_arcsec = grid.write_grid(args.input, args.output, args.shape, rotation_angle)
+    angular_distance_arcsec = grid.write_grid(args.input, args.output, args.shape, rotation_angle, args.name)
 
     print("Input file: %s" % args.input)
     print("Output file: %s" % args.output)
