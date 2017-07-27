@@ -13,7 +13,8 @@ array_types = {'float32': 'REAL',
                'float64': 'REAL',
                'float16': 'REAL',
                'int64': 'INTEGER',
-               'int32': 'INTEGER'}
+               'int32': 'INTEGER',
+               'object': 'TEXT'}
 
 
 @contextlib.contextmanager
@@ -210,9 +211,6 @@ class SqliteDatabase(object):
 
         # Get table definition from Pandas
         table_definition = pd_get_schema(dataframe, table_name, dtype=conv)
-
-        print("Creating table with this definition:")
-        print(table_definition)
 
         # Create table (but do not commit yet)
 
