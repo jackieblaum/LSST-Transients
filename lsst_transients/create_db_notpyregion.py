@@ -13,7 +13,7 @@ from astropy.wcs.utils import proj_plane_pixel_scales
 from oversample_image import oversample
 from utils.cartesian_product import cartesian_product
 from utils import database_io
-
+from utils.chuncker import chunker
 
 logging.basicConfig(format="%(asctime)s %(message)s")
 log = logging.getLogger(os.path.basename(__file__))
@@ -298,9 +298,7 @@ class Data_Database(object):
         # Write the fluxes to the database
         print("Writing to database...\n")
         dataframes = []
-        
-        #import pdb;pdb.set_trace()
-        
+
         for r in range(0,num_regs):
             
             if (r+1) % 100 == 0:
@@ -360,7 +358,7 @@ class Data_Database(object):
         return None
 
         
-    def fill_visits(self, path, flux, conditions):
+    def fill_visits(self, path, flux, conditions, chunk_size=10):
         '''
         Fills the two dataframes that are indexed by visits. It first fills the flux table and then fills the conditions table.
 
@@ -368,14 +366,6 @@ class Data_Database(object):
         '''
 
         print("Collecting headers and data from the visit files...\n")
-        # Arrays of headers and data. There will be one from each visit in the directory.
-        headers_prim = []
-        headers_nobkgd = []
-        headers_orig = []
-        headers_masks = []
-        data_masks = []
-        data_nobkgd = []
-        data_orig = []
 
         # Collect all the visit files from the directory
         files_set = []
@@ -400,21 +390,35 @@ class Data_Database(object):
         visits_sorted = [files_set for times, files_set in times_with_visits]
 
         # Collect all the necessary headers from each visit file
-        for f in visits_sorted:
 
-            headers_prim.append(pyfits.getheader(f, 0))
-            headers_nobkgd.append(pyfits.getheader(f, 1))
-            data_nobkgd.append(pyfits.getdata(f, 1))
-            data_masks.append(pyfits.getdata(f, 2))
-            headers_masks.append(pyfits.getheader(f, 2))
-            headers_orig.append(pyfits.getheader(f, 3))
-            data_orig.append(pyfits.getdata(f, 3))
-        
-        # Call helper methods to fill in the fluxes and conditions for these visits
-        if flux == "True":
-            self._fill_flux(headers_nobkgd, data_nobkgd, headers_orig, data_orig, headers_masks, data_masks)
-        if conditions == "True":
-            self._fill_cond(headers_prim)
+        # Arrays of headers and data. There will be one from each visit in the directory.
+        for chunk in chunker(visits_sorted, chunk_size):
+
+            headers_prim = []
+            headers_nobkgd = []
+            headers_orig = []
+            headers_masks = []
+            data_masks = []
+            data_nobkgd = []
+            data_orig = []
+
+            for filename in chunk:
+
+                with pyfits.open(filename) as f:
+
+                    headers_prim.append(f[0].header)
+                    headers_nobkgd.append(f[1].header)
+                    data_nobkgd.append(f[1].data)
+                    data_masks.append(f[2].data)
+                    headers_masks.append(f[2].header)
+                    headers_orig.append(f[3].header)
+                    data_orig.append(f[3].data)
+
+            # Call helper methods to fill in the fluxes and conditions for these visits
+            if flux == "True":
+                self._fill_flux(headers_nobkgd, data_nobkgd, headers_orig, data_orig, headers_masks, data_masks)
+            if conditions == "True":
+                self._fill_cond(headers_prim)
         
         return None
         

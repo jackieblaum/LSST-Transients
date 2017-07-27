@@ -192,7 +192,6 @@ class SqliteDatabase(object):
         """
 
         # Get table definition from Pandas
-
         table_definition = pd_get_schema(dataframe, table_name, flavor='sqlite')
 
         # Create table (but do not commit yet)
@@ -200,6 +199,9 @@ class SqliteDatabase(object):
         self.query(table_definition, fetch=False, commit=False)
 
         # Inserts many records at a time
+        self.append_dataframe_to_table(dataframe, table_name, commit)
+
+    def append_dataframe_to_table(self, dataframe, table_name, commit=True):
 
         # How many columns?
         n_columns = dataframe.shape[1]
@@ -215,7 +217,6 @@ class SqliteDatabase(object):
 
         # Commit if required
         if commit:
-
             self._connection.commit()
 
     def get_table_as_dataframe(self, table_name):
