@@ -144,7 +144,7 @@ class Data_Database(object):
         :param ds9_string: The information for a region in a string format
         :param max_coords: The maximum pixel coordinates of the image
 
-        :return mask array
+        :return mask array, corners of bounding box
 
         """
 
@@ -203,9 +203,10 @@ class Data_Database(object):
         :param data: Background-subtracted data from the image
         :param in_region: Mask to check whether the data is within the region
         :param corner1: Bottom left corner of the bounding box
-        :param corner2:
-        :param corner3:
-        :param corner4:
+        :param corner2: Top left corner of the bounding box
+        :param corner3: Bottom right corner of the bounding box
+        :param corner4: Top right corner of the bounding box
+
         :return: The masked data for the region
         '''
 
@@ -224,12 +225,16 @@ class Data_Database(object):
         '''
         Adds the flux from each pixel within the region in order to get the total flux for the region.
 
-        :param w: The WCS from the header
-        :param ds9_string: The information for a region in a string format
-        :param oversampled_bkgsub_image: The data array of the visit file to be examined (the fluxes)
-        :param max_coords: The maximum pixel coordinates of the image
+        :param oversampled_bkgsub_image: The data array of the background-subtracted image to be examined (the fluxes)
+        :param in_region: Mask to check whether the data is within the region
+        :param corner1: Bottom left corner of the bounding box
+        :param corner2: Top left corner of the bounding box
+        :param corner3: Bottom right corner of the bounding box
+        :param corner4: Top right corner of the bounding box
+        :param oversampled_counts_image: The data array of the image before background-subtraction
+        :param bkgd_uncertainty: The error value for the background
 
-        :return sum_flux: The total flux for this region
+        :return Total flux and flux error for this region
         '''
 
         # Add the fluxes of the pixels within the bounding box
@@ -252,10 +257,12 @@ class Data_Database(object):
         Gets the fluxes for all of the regions in the image.
 
         :param reg: The region dataframe created with lsst_grid_generator_shapes.py
-        :param data: The data array of the visit file to be examined
+        :param data: The data array of the background-subtracted image (fluxes)
+        :param orig: The data array of the image before background-subtraction
         :param header: The header of the visit file to be examined
+        :param bkgd_uncertainty: The error value for the background
 
-        :return fluxes: An array of the fluxes for each region in the image
+        :return fluxes: An array of the fluxes and flux errors for each region in the image
         '''
 
         # Get the number of regions and use this number to initialize an array that will store the fluxes for each region
@@ -294,10 +301,10 @@ class Data_Database(object):
         Computes the error of the flux for each region of the image.
 
         :param oversampled_bkgsub_image: A list of fluxes for each region for the background subtracted image
-        :param oversampled_counts_image: A list of fluxes for each region for the original image (before subtraction)
-        :param mask_data: A list of fluxes for each region for the mask image
+        :param oversampled_counts_image: A list of counts for each region for the original image (before subtraction)
+        :param mask_data: A list of counts for each region for the mask image
 
-        :return flux_errors: An array of flux errors for the background subtracted image, one error for each region
+        :return The error on the background for this visit
         '''
 
         # Transform the original mask (which contains not only 0 and 1, but also other numbers)
@@ -332,11 +339,11 @@ class Data_Database(object):
         Fills the dataframe with the flux and the flux error for each region with the indices as the visit number.
 
         :param headers_nobkgd: An array of the headers from the background-subtracted images from each of the visits
-        :param data_nobkgd: An array of the flux data from the background-subtracted images from each of the visits
+        :param data_nobkgd: An array of the data from the background-subtracted images from each of the visits
         :param headers_orig: An array of the headers from the original images from each of the visits
-        :param data_orig: An array of the flux data from the original images from each of the visits
+        :param data_orig: An array of the data from the original images from each of the visits
         :param headers_masks: An array of the headers from the mask images from each of the visits
-        :param data_masks: An array of the flux data from the mask images from each of the visits
+        :param data_masks: An array of the data from the mask images from each of the visits
 
         :return None
         '''
@@ -373,25 +380,11 @@ class Data_Database(object):
             fluxes_nobkgd, fluxes_errors = self._get_fluxes(reg, scaled_data_nobkgd, scaled_data_orig,
                                                             scaled_wcs_nobkgd, background_uncertainty)
 
-            # print("\nScaled original image\n")
-            # fluxes_orig = self._get_fluxes(reg, scaled_data_orig,
-            #                                scaled_wcs_nobkgd)
-            # print("\nScaled mask image\n")
-            # fluxes_mask = self._get_fluxes(reg, scaled_data_masks,
-            #                                scaled_wcs_nobkgd)
-
             # Normalize the scaled images
             norm_factor = scale_factor * 2
             print("\nnormalization factor (background-subtracted): %f\n" % norm_factor)
 
             fluxes_nobkgd /= norm_factor
-
-            # fluxes_orig /= norm_factor
-            #
-            # fluxes_mask /= norm_factor
-
-            # # Use the helper method to find the errors for the flux in each region
-            # flux_errors_nobkgd = self._get_background_uncertainty(fluxes_nobkgd, fluxes_orig, fluxes_mask)
 
             # Arrays store the fluxes and flux errors for each region for each visit.
             visit_fluxes.append(fluxes_nobkgd)
