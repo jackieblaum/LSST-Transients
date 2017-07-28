@@ -470,9 +470,9 @@ class Data_Database(object):
                     data_orig.append(f[3].data)
 
             # Call helper methods to fill in the fluxes and conditions for these visits
-            if flux == "True":
+            if flux == True:
                 self._fill_flux(headers_nobkgd, data_nobkgd, headers_orig, data_orig, headers_masks, data_masks)
-            if conditions == "True":
+            if conditions == True:
                 self._fill_cond(headers_prim)
         
         return None
