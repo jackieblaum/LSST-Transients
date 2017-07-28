@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from astropy.stats import bayesian_blocks
-from lsst_transients.create_db_notpyregion import Data_Database
+from lsst_transients.create_db import Data_Database
 
 
 class BayesianBlocks(object):
