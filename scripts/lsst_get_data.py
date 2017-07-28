@@ -9,8 +9,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collect information from each visit")
     parser.add_argument('-p', '--path', type=str, help='Input path to folder with all visit files', required=True)
     parser.add_argument('-n', '--name', type=str, help='Name for the database', required=True)
-    parser.add_argument('-f', '--flux', type=str, help='Get the fluxes from the files (True or False)', required=True)
-    parser.add_argument('-c', '--conditions', type=str, help='Get the conditions from the files (True or False)', required=True)
+    parser.add_argument('-f', '--flux', type=bool, help='Get the fluxes from the files (True or False)',
+                        required=False, default=True)
+    parser.add_argument('-c', '--conditions', type=bool, help='Get the conditions from the files (True or False)',
+                        required=False, default=True)
     
     args = parser.parse_args()
         

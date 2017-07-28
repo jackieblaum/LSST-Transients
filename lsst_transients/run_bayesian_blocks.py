@@ -60,7 +60,7 @@ class BayesianBlocks(object):
         :return: None
         '''
 
-        if sort == "True":
+        if sort:
 
             print("Sorting the visits by time...")
             self._sort_visits()
@@ -90,7 +90,7 @@ class BayesianBlocks(object):
 
             # flux_tables.append(df)
 
-            edges = bayesian_blocks(t=times, x=df['flux'].values, sigma=df['err'].values, fitness='measures', p0=10**(-3))
+            edges = bayesian_blocks(t=times, x=df['flux'].values, sigma=df['err'].values, fitness='measures', p0=1e-3)
             print("Completed region %i of %i" % (i, self.num_regs))
             print edges
 
