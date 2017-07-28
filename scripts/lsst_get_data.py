@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import argparse
 
-from lsst_transients.create_db_notpyregion import Data_Database
+from lsst_transients.create_db import Data_Database
 
 if __name__ == "__main__":
 
