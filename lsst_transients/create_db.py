@@ -41,6 +41,7 @@ class Data_Database(object):
 
         self.db.connect()
 
+
     def fill_reg(self, regfile):
         '''
         Fills the database with the string for each region as seen in DS9.
@@ -79,6 +80,7 @@ class Data_Database(object):
 
             return len(indices)
 
+
     def init_flux_tables(self, num_regs):
         '''
         Inserts empty flux tables into the database.
@@ -103,6 +105,7 @@ class Data_Database(object):
 
         return None
 
+
     def init_cond_table(self):
         '''
         Inserts an empty conditions table into the database.
@@ -114,6 +117,7 @@ class Data_Database(object):
         self.db.insert_dataframe(cond_dataframe, 'cond_table')
 
         return None
+
 
     def _get_distances(self, x, y, x2, y2):
         '''
@@ -130,6 +134,7 @@ class Data_Database(object):
         distances = np.sqrt((x - x2) ** 2 + (y - y2) ** 2)
 
         return distances
+
 
     def _find_pixels_in_region(self, w, ds9_string, max_coords):
         """
@@ -191,7 +196,18 @@ class Data_Database(object):
 
         return in_region, corner1, corner2, corner3, corner4
 
+
     def _get_data_in_region(self, data, in_region, corner1, corner2, corner3, corner4):
+        '''
+
+        :param data: Background-subtracted data from the image
+        :param in_region: Mask to check whether the data is within the region
+        :param corner1: Bottom left corner of the bounding box
+        :param corner2:
+        :param corner3:
+        :param corner4:
+        :return: The masked data for the region
+        '''
 
         # Select first elements within the bounding box
         reg_data = data[corner1[1]:corner2[1], corner1[0]:corner3[0]]
@@ -201,6 +217,7 @@ class Data_Database(object):
         reg_data = reg_data.flatten()
 
         return reg_data[in_region]
+
 
     def _sum_flux(self, oversampled_bkgsub_image, in_region, corner1, corner2, corner3, corner4,
                   oversampled_counts_image, bkgd_uncertainty):
@@ -225,11 +242,12 @@ class Data_Database(object):
                                                    in_region,
                                                    corner1, corner2, corner3, corner4)  # type: np.ndarray
 
-        flux_errors = np.sqrt(reg_data_counts + bkgd_uncertainty ** 2)
+        flux_error = np.sqrt(np.sum(reg_data_counts) + bkgd_uncertainty ** 2)
 
-        return sum_flux, flux_errors
+        return sum_flux, flux_error
 
-    def _get_fluxes(self, reg, data, header):
+
+    def _get_fluxes(self, reg, data, orig, header, bkgd_uncertainty):
         '''
         Gets the fluxes for all of the regions in the image.
 
@@ -264,11 +282,12 @@ class Data_Database(object):
                 log.info("Processed region %i of %i" % (i + 1, num_regs))
 
             # Call the helper method to get the sum of the flux from all the pixels in the region
-            flux, error = self._sum_flux(data, in_region, corner1, corner2, corner3, corner4)
+            flux, error = self._sum_flux(data, in_region, corner1, corner2, corner3, corner4, orig, bkgd_uncertainty)
             fluxes[i] = flux
             fluxes_errors[i] = error
 
         return fluxes, fluxes_errors
+
 
     def _get_background_uncertainty(self, oversampled_bkgsub_image, oversampled_counts_image, mask_data):
         '''
@@ -300,11 +319,13 @@ class Data_Database(object):
 
         return bkgd_error
 
+
     def _get_data(self, dtype, *args, **kwargs):
 
         this_data = pyfits.getdata(*args, **kwargs)
 
         return np.array(this_data, dtype=dtype)
+
 
     def _fill_flux(self, headers_nobkgd, data_nobkgd, headers_orig, data_orig, headers_masks, data_masks):
         '''
@@ -349,12 +370,12 @@ class Data_Database(object):
             # Get the fluxes for each region for the scaled images
             print("Scaled background-subtracted image\n")
 
-            fluxes_nobkgd, fluxes_errors = self._get_fluxes(reg, scaled_data_nobkgd, scaled_wcs_nobkgd)
+            fluxes_nobkgd, fluxes_errors = self._get_fluxes(reg, scaled_data_nobkgd, scaled_data_orig,
+                                                            scaled_wcs_nobkgd, background_uncertainty)
 
             # print("\nScaled original image\n")
             # fluxes_orig = self._get_fluxes(reg, scaled_data_orig,
             #                                scaled_wcs_nobkgd)
-
             # print("\nScaled mask image\n")
             # fluxes_mask = self._get_fluxes(reg, scaled_data_masks,
             #                                scaled_wcs_nobkgd)
@@ -407,6 +428,7 @@ class Data_Database(object):
 
         return None
 
+
     def _fill_cond(self, headers):
         '''
         Fills the dataframe with the conditions for each visit (seeing, duration, and date). Seeing at 5000 angstrom (sigma)
@@ -437,6 +459,7 @@ class Data_Database(object):
         self.db.append_dataframe_to_table(cond_dataframe, 'cond_table')
 
         return None
+
 
     def fill_visits(self, path, flux, conditions, chunk_size=10):
         '''
@@ -512,6 +535,7 @@ class Data_Database(object):
                 self._fill_cond(headers_prim)
 
         return None
+
 
     def close(self):
         '''
