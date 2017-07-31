@@ -7,13 +7,13 @@ import logging
 import astropy.units as u
 import astropy.io.fits as pyfits
 
-from region import Region
+from lsst_transients.region import Region
 from astropy import wcs
 from astropy.wcs.utils import proj_plane_pixel_scales
-from oversample_image import oversample
-from utils.cartesian_product import cartesian_product
-from utils import database_io
-from utils.chuncker import chunker
+from lsst_transients.oversample_image import oversample
+from lsst_transients.utils.cartesian_product import cartesian_product
+from lsst_transients.utils import database_io
+from lsst_transients.utils.chuncker import chunker
 
 logging.basicConfig(format="%(asctime)s %(message)s")
 log = logging.getLogger(os.path.basename(__file__))
@@ -22,7 +22,7 @@ log.setLevel(logging.DEBUG)
 
 class Data_Database(object):
     '''
-    The Data_Database class is used to create a database and write to different tables: a region table, a flux table for
+    The DataDatabase class is used to create a database and write to different tables: a region table, a flux table for
     each region, and a conditions table.
     '''
     

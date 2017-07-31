@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from astropy.stats import bayesian_blocks
-from lsst_transients.create_db import Data_Database
+from lsst_transients.data_database import DataDatabase
 
 
 class BayesianBlocks(object):
@@ -11,7 +11,7 @@ class BayesianBlocks(object):
     '''
 
     def __init__(self, dbname):
-        self.database = Data_Database("%s.db" % dbname)
+        self.database = DataDatabase("%s.db" % dbname)
 
         # Get the number of regions
         reg = self.database.db.get_table_as_dataframe('reg_dataframe')
@@ -51,7 +51,7 @@ class BayesianBlocks(object):
         return None
 
 
-    def run_algorithm(self, sort):
+    def run_algorithm(self, sort=True):
         '''
         Sort the visits if needed, then run the Bayesian Block algorithm on the data
 
@@ -97,7 +97,9 @@ class BayesianBlocks(object):
             # Plot and save
             subs[i-1].errorbar(times, df['flux'].values, yerr=df['err'].values, fmt='.')
             subs[i-1].set_title('reg%i' % i)
-            subs[i-1].set_ylim([-3000,3000])
+            #subs[i-1].set_ylim([-3000,3000])
+
+            subs[i-1].set_yscale("symlog")
 
             for j in range(0,len(edges)):
                 subs[i-1].axvline(edges.item(j), linestyle='--')

@@ -14,16 +14,16 @@ from oversample_image import oversample
 from utils.cartesian_product import cartesian_product
 from utils import database_io
 from utils.chuncker import chunker
+from utils.logging_system import get_logger
+from utils.loop_with_progress import loop_with_progress
 
-logging.basicConfig(format="%(asctime)s %(message)s")
-log = logging.getLogger(os.path.basename(__file__))
-log.setLevel(logging.DEBUG)
+log = get_logger(os.path.basename(__file__))
 
 
-class Data_Database(object):
+class DataDatabase(object):
     '''
-    The Data_Database class is used to create a database and write to different tables: a region table, a flux table for
-    each region, and a conditions table.
+    The DataDatabase class is used to create and handle a database and write to different tables: a region table,
+    a flux table for each region, and a conditions table.
     '''
 
     def __init__(self, dbname, first=True):
@@ -41,44 +41,41 @@ class Data_Database(object):
 
         self.db.connect()
 
-
-    def fill_reg(self, regfile):
+    def fill_reg(self, reg_list_wcs, shape, angular_distance_arcsec, rotation_angle):
         '''
         Fills the database with the string for each region as seen in DS9.
 
-        :param regfile: Region file created using lsst_grid_generator_shapes.py
+        :param reg_list_wcs: List of region centers (a list of tuples) in sky coordinates
 
         :return The number of regions
         '''
 
-        with open(regfile) as f:
+        if shape == "square":
 
-            # An array of strings where we will store the string of each region as it appears in the DS9 file.
-            strs = []
+            ds9_representation = map(lambda (ra, dec):'box(%f, %f, %f", %f", %f)' % (ra, dec,
+                                                                                     angular_distance_arcsec,
+                                                                                     angular_distance_arcsec,
+                                                                                     360 - rotation_angle),
+                                     reg_list_wcs)
 
-            for i, line in enumerate(f):
+        elif shape == "circle":
 
-                if i == 0:
+            ds9_representation = map(lambda (ra, dec): 'circle(%f, %f, %f")' % (ra, dec, angular_distance_arcsec),
+                                     reg_list_wcs)
 
-                    pass
+        else:
 
-                else:
+            raise ValueError("Shape %s is not valid. Only 'circle' and 'square' are supported. " % shape)
 
-                    # Store the string with the corresponding region in the array after trimming the "\n" off the end.
-                    trimmed = line[0:len(line) - 1]
-                    strs.append(trimmed)
+        # Fill the index array now that we know how many regions there were
+        indices = range(1, len(ds9_representation)+1)
 
-            # Fill the index array now that we know how many regions there were
-            indices = range(1, i + 1)
+        series = pd.Series(ds9_representation, index=indices)
 
-            series = pd.Series(strs, index=indices)
+        reg_dataframe = pd.DataFrame.from_dict({'ds9_info': series})
+        self.db.insert_dataframe(reg_dataframe, 'reg_dataframe')
 
-            reg_dataframe = pd.DataFrame.from_dict({'ds9_info': series})
-            self.db.insert_dataframe(reg_dataframe, 'reg_dataframe')
-
-            print(reg_dataframe)
-
-            return len(indices)
+        return len(indices)
 
 
     def init_flux_tables(self, num_regs):
@@ -91,17 +88,49 @@ class Data_Database(object):
         '''
         # Write the fluxes to the database
 
-        # Insert many tables
+
+        # with database_io.bulk_operation(self.db):
+        #
+        #     # Create first table
+        #
+        #     flux_dataframe = pd.DataFrame(columns=['flux', 'err'], dtype=float)
+        #     self.db.insert_dataframe(flux_dataframe, 'flux_table_1', commit=True)
+        #
+        #     # Now duplicate it (much faster than just creating new ones)
+        #
+        #     for r in loop_with_progress(range(1, num_regs), num_regs - 1, 1000, my_printer):
+        #
+        #         self.db.duplicate_table('flux_table_1', 'flux_table_%i' % (r + 1), commit=False)
 
         with database_io.bulk_operation(self.db):
 
-            for r in range(0, num_regs):
+            # Insert many tables
+            class hack(object):
 
-                if r % 1000 == 0:
-                    print("Initialized flux table %i of %i" % (r + 1, num_regs))
+                def __init__(self, db):
 
-                flux_dataframe = pd.DataFrame(columns=['flux', 'err'], dtype=float)
-                self.db.insert_dataframe(flux_dataframe, 'flux_table_%i' % (r + 1), commit=False)
+                    self._giant_query = []
+                    self._db = db
+
+                def __call__(self, *args, **kwargs):
+
+                    if self._giant_query:
+                        log.info("Writing %s tables" % len(self._giant_query))
+                        self._db.cursor.executescript(";".join(self._giant_query))
+                        self._giant_query = []
+
+                    log.info(*args, **kwargs)
+
+
+            create_table_cmd = 'CREATE TABLE "flux_table_%i" ("flux" REAL, "err" REAL)'
+
+            my_printer = hack(self.db)
+
+            for r in loop_with_progress(range(num_regs), num_regs, 50000, my_printer):
+
+                my_printer._giant_query.append(create_table_cmd % (r+1))
+
+        self.db.connection.commit()
 
         return None
 
@@ -353,7 +382,10 @@ class Data_Database(object):
         n_visits_in_this_chunk = len(headers_nobkgd)
 
         for i in range(0, n_visits_in_this_chunk):
-            print("File %i:\n\nOversampling...\n" % (i + 1))
+
+            log.info("Processing file %i of %i..." % ((i+1), n_visits_in_this_chunk))
+
+            log.debug("oversampling")
 
             # Oversample the background-subtracted, the original images, and the mask images.
             scale_factor = 2
@@ -362,36 +394,23 @@ class Data_Database(object):
 
             scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], scale_factor)
 
-            scaled_data_mask, scaled_wcs_mask = oversample(data_masks[i], headers_masks[i], scale_factor)
+            scaled_data_mask, scaled_wcs_mask = oversample(data_masks[i], headers_masks[i], scale_factor,
+                                                           method='nearest')
 
+            log.debug("Getting background uncertainty")
             # Get the background error (which is the same for all regions)
             background_uncertainty = self._get_background_uncertainty(scaled_data_nobkgd, scaled_data_orig,
                                                                       scaled_data_mask)
             # Get the fluxes for each region for the scaled images
-            print("Scaled background-subtracted image\n")
+            log.debug("Getting fluxes for each region")
 
             fluxes_nobkgd, fluxes_errors = self._get_fluxes(reg, scaled_data_nobkgd, scaled_data_orig,
                                                             scaled_wcs_nobkgd, background_uncertainty)
 
-            # print("\nScaled original image\n")
-            # fluxes_orig = self._get_fluxes(reg, scaled_data_orig,
-            #                                scaled_wcs_nobkgd)
-            # print("\nScaled mask image\n")
-            # fluxes_mask = self._get_fluxes(reg, scaled_data_masks,
-            #                                scaled_wcs_nobkgd)
-
             # Normalize the scaled images
             norm_factor = scale_factor * 2
-            print("\nnormalization factor (background-subtracted): %f\n" % norm_factor)
 
             fluxes_nobkgd /= norm_factor
-
-            # fluxes_orig /= norm_factor
-            #
-            # fluxes_mask /= norm_factor
-
-            # # Use the helper method to find the errors for the flux in each region
-            # flux_errors_nobkgd = self._get_background_uncertainty(fluxes_nobkgd, fluxes_orig, fluxes_mask)
 
             # Arrays store the fluxes and flux errors for each region for each visit.
             visit_fluxes.append(fluxes_nobkgd)
@@ -402,7 +421,7 @@ class Data_Database(object):
         region_errs = np.swapaxes(visit_errs, 0, 1)
 
         # Write the fluxes to the database
-        print("Writing to database...\n")
+        log.info("Writing to database...\n")
         dataframes = []
 
         for r in range(0, num_regs):
@@ -422,7 +441,7 @@ class Data_Database(object):
             for r in range(0, num_regs):
 
                 if r % 100 == 0:
-                    print("Inserted table %i of %i" % (r + 1, num_regs))
+                    log.info("Inserted table %i of %i" % (r + 1, num_regs))
 
                 self.db.append_dataframe_to_table(dataframes[r], 'flux_table_%i' % (r + 1), commit=False)
 
@@ -460,32 +479,50 @@ class Data_Database(object):
 
         return None
 
-
-    def fill_visits(self, path, flux, conditions, chunk_size=10):
+    def fill_visits(self, path, filter, flux, conditions, chunk_size=10):
         '''
         Fills the dataframes that are indexed by visits. It first fills the flux tables and then fills the conditions table.
 
         :param path: The path to folder with all visit files
         :param flux: True if the flux tables should be filled, False otherwise
         :param conditions: True if the conditions table should be filled, False otherwise
+        :param filter: the filter to select
         :param chunk_size: The number of visit files to loop through at a time, default=10
 
         :return None
         '''
 
-        print("Collecting headers and data from the visit files...\n")
+        log.info("Collecting headers and data from the visit files...\n")
 
         # Collect all the visit files from the directory
         files_set = []
         for root, dirs, files in os.walk(path):
 
             for name in files:
-                if 'bkgd' not in name and '.fits' in name:
-                    files_set.append(os.path.join(root, name))
 
-            for name in dirs:
                 if 'bkgd' not in name and '.fits' in name:
-                    files_set.append(os.path.join(root, name))
+
+                    filename = os.path.join(root, name)
+
+                    # Get filter name
+
+                    try:
+
+                        this_filter = pyfits.getval(filename, "FILTER", ext=0)
+
+                    except:
+
+                        # Could not read FILTER, probably not the image we are looking for
+
+                        continue
+
+                    else:
+
+                        # Add if it matches the filter we are looking for
+
+                        if this_filter.replace(" ", "") == filter:
+
+                            files_set.append(filename)
 
         # Sort the visit files based on Modified Julian Time
         times_with_visits = []
@@ -503,7 +540,7 @@ class Data_Database(object):
         # Loop through in chunks of visits
         for i, chunk in enumerate(chunker(visits_sorted, chunk_size)):
 
-            print("Processing chunk %i of %i..." % (i + 1, len(visits_sorted) // chunk_size + 1))
+            log.info("Processing chunk %i of %i..." % (i + 1, len(visits_sorted) // chunk_size + 1))
 
             # Arrays of headers and data. There will be one from each visit in the directory.
             headers_prim = []
@@ -547,6 +584,6 @@ class Data_Database(object):
         # Disconnecting the database writes any uncommitted information to the database
         self.db.disconnect()
 
-        print("Closed successfully")
+        log.info("Database closed successfully")
 
         return None

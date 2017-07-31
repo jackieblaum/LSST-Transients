@@ -3,7 +3,7 @@ import scipy.misc
 import numpy
 
 
-def oversample(imageData, imageWCS, scaleFactor, threshold=None):
+def oversample(imageData, imageWCS, scaleFactor, threshold=None, method='bilinear'):
     '''
     
     :param imageData: Input array
@@ -15,7 +15,7 @@ def oversample(imageData, imageWCS, scaleFactor, threshold=None):
     :return scaledWCS:
     '''
 
-    scaledData = scipy.misc.imresize(imageData, float(scaleFactor), interp='bilinear', mode='F')
+    scaledData = scipy.misc.imresize(imageData, float(scaleFactor), interp=method, mode='F')
 
     if threshold != None:
         # Resample with constant interpolation

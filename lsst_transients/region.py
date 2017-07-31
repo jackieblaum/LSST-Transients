@@ -13,7 +13,7 @@ class Region(object):
         :param y: The vertical location of the center of the region
         :param d: The length of the sides of the region if it is a square, otherwise the diameter
 		  of the region if it is a circle
-	:param shape: A string that specifies the shape of the region, either "square" or "circle"
+	:param shape: A string that specifies the _shape of the region, either "square" or "circle"
         '''
 
         self._x = x

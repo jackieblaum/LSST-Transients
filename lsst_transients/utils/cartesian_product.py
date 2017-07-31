@@ -15,7 +15,7 @@ def cartesian_product(arrays, out=None):
     Returns
     -------
     out : ndarray
-        2-D array of shape (M, len(arrays)) containing cartesian products
+        2-D array of _shape (M, len(arrays)) containing cartesian products
         formed of input arrays.
 
     Examples

@@ -17,6 +17,8 @@ array_types = {'float32': 'REAL',
                'object': 'TEXT'}
 
 
+sqlite3.isolation_level = None
+
 @contextlib.contextmanager
 def bulk_operation(db_instance):
     """
@@ -32,6 +34,9 @@ def bulk_operation(db_instance):
     # Deactivate writing on disk at every iteration
 
     db_instance.query("PRAGMA synchronous=OFF")
+    db_instance.query("PRAGMA LOCKING_MODE=EXCLUSIVE")
+    db_instance.query("PRAGMA automatic_index = FALSE")
+    db_instance.query("PRAGMA JOURNAL_MODE=OFF")
 
     try:
 
@@ -48,6 +53,7 @@ def bulk_operation(db_instance):
         db_instance.connection.commit()
 
         db_instance.query("PRAGMA synchronous=ON")
+        db_instance.query("PRAGMA LOCKING_MODE=NORMAL")
 
 
 class SqliteDatabase(object):
@@ -192,6 +198,14 @@ class SqliteDatabase(object):
 
         self.query("DROP TABLE %s" % table_name, fetch=False, commit=commit)
 
+    def duplicate_table(self, original_table_name, new_name, commit=True):
+
+        self._cursor.execute("CREATE TABLE %s AS SELECT * FROM %s" % (new_name, original_table_name))
+
+        if commit:
+
+            self._connection.commit()
+
     def insert_dataframe(self, dataframe, table_name, commit=True):
         """
         Insert a dataframe in a NEW table. It crashes if the table already exists
@@ -216,8 +230,16 @@ class SqliteDatabase(object):
 
         self.query(table_definition, fetch=False, commit=False)
 
-        # Inserts many records at a time
-        self.append_dataframe_to_table(dataframe, table_name, commit)
+        if len(dataframe) > 0:
+
+            # Inserts many records at a time
+            self.append_dataframe_to_table(dataframe, table_name, commit)
+
+        else:
+
+            if commit:
+
+                self._connection.commit()
 
     def append_dataframe_to_table(self, dataframe, table_name, commit=True):
 
