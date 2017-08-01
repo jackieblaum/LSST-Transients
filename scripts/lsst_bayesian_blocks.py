@@ -10,10 +10,13 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--sort', type=bool, help='Sort the visits in the database (True or False)',
                         required=False, default=False)
     parser.add_argument('-n', '--name', type=str, help='Name of the database (without .db)', required=True)
+    parser.add_argument('-f', '--file', type=str, help='Name of the file to store the blocks in', required=True)
+    parser.add_argument('-b', '--blocks', type=int, help='Minimum number of blocks for a region to be saved',
+                        required=False, default=4)
 
     args = parser.parse_args()
 
-    bb = BayesianBlocks(args.name)
+    bb = BayesianBlocks(args.name, args.file, args.blocks)
     bb.run_algorithm(args.sort)
 
 

@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import yaml
 
 from astropy.stats import bayesian_blocks
 from lsst_transients.data_database import DataDatabase
@@ -10,12 +11,14 @@ class BayesianBlocks(object):
     Runs the Bayesian Block algorithm on the data.
     '''
 
-    def __init__(self, dbname):
+    def __init__(self, dbname, filename, min_blocks):
         self.database = DataDatabase("%s.db" % dbname)
 
         # Get the number of regions
         reg = self.database.db.get_table_as_dataframe('reg_dataframe')
         self.num_regs = len(reg.index)
+        self.file = '%s%s' % (filename, '.yml')
+        self.min_blocks = min_blocks
 
 
     def _sort_visits(self):
@@ -51,6 +54,17 @@ class BayesianBlocks(object):
         return None
 
 
+    def _append_edges(self, d):
+        '''
+
+        :param d:
+        :return:
+        '''
+
+        with open(self.file, "a") as f:
+            yaml.dump(d, f)
+
+
     def run_algorithm(self, sort=True):
         '''
         Sort the visits if needed, then run the Bayesian Block algorithm on the data
@@ -77,6 +91,10 @@ class BayesianBlocks(object):
         # We will plot later
         fig, subs = plt.subplots(1, self.num_regs, figsize=(75, 10))
 
+        # Erase any existing file with the same name, create new file
+        with open(self.file, "w") as f:
+            pass
+
         for i in range(1, self.num_regs+1):
 
             if i%100 == 0:
@@ -93,6 +111,10 @@ class BayesianBlocks(object):
             edges = bayesian_blocks(t=times, x=df['flux'].values, sigma=df['err'].values, fitness='measures', p0=1e-3)
             print("Completed region %i of %i" % (i, self.num_regs))
             print edges
+            d = {}
+            if len(edges) >= self.min_blocks:
+                d['reg%i' % i] = edges.tolist()
+                self._append_edges(d)
 
             # Plot and save
             subs[i-1].errorbar(times, df['flux'].values, yerr=df['err'].values, fmt='.')
