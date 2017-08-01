@@ -528,7 +528,6 @@ class DataDatabase(object):
                         # Add if it matches the filter we are looking for
 
                         if this_filter.replace(" ", "") == filter:
-
                             files_set.append(filename)
 
         # Sort the visit files based on Modified Julian Time
@@ -580,6 +579,21 @@ class DataDatabase(object):
 
         return None
 
+    def get_flux_list(self):
+        '''
+
+        :return:
+        '''
+        reg = self.db.get_table_as_dataframe('reg_dataframe')
+        num_regs = len(reg.index)
+
+        fluxes = []
+        for i in range(1,num_regs+1):
+            df = self.db.get_table_as_dataframe('flux_table_%i' % i)
+            for j in range(len(df['flux'])):
+                fluxes.append(df['flux'][j])
+        return fluxes
+
 
     def close(self):
         '''
@@ -591,6 +605,6 @@ class DataDatabase(object):
         # Disconnecting the database writes any uncommitted information to the database
         self.db.disconnect()
 
-        log.info("Database closed successfully")
+        log.info("Database closed")
 
         return None
