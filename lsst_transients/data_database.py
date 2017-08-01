@@ -2,22 +2,115 @@ import pandas as pd
 import numpy as np
 import os
 import re
-import logging
+import functools
+import multiprocessing
+import ctypes
 
 import astropy.units as u
 import astropy.io.fits as pyfits
 
-from region import Region
+from circular_region import CircularRegion
 from astropy import wcs
 from astropy.wcs.utils import proj_plane_pixel_scales
 from oversample_image import oversample
-from utils.cartesian_product import cartesian_product
 from utils import database_io
 from utils.chuncker import chunker
 from utils.logging_system import get_logger
 from utils.loop_with_progress import loop_with_progress
 
 log = get_logger(os.path.basename(__file__))
+
+# These two globals will be used to store a shared array between the processes when computing the fluxes
+# Unfortunately having global variables is the only way to share memory between processes
+data_t = [None, None, None]
+orig_t = [None, None, None]
+
+
+def worker(ds9_string, w, mask_x, mask_y, mask_x_nonzero, mask_y_nonzero, bkgd_uncertainty, maxx, maxy):
+
+    # Gather the data and the orig array from the shared multiprocessing array
+    # and transform them back to numpy (note that this does not copy the data, it only re-interprets them)
+    data = np.frombuffer(data_t[0].get_obj(), dtype=data_t[1]).reshape(data_t[2])
+    orig = np.frombuffer(orig_t[0].get_obj(), dtype=orig_t[1]).reshape(orig_t[2])
+
+    this_region = _get_region(w, ds9_string)
+
+    # Now shift the mask
+    # NOTE that by definition these are integers because the regions are built by shifting them by integer
+    # amount of pixels
+    dx = int(this_region.x - mask_x)
+    dy = int(this_region.y - mask_y)
+
+    this_mask_i = mask_x_nonzero + dx  # type: np.ndarray
+    this_mask_j = mask_y_nonzero + dy  # type: np.ndarray
+
+    # Make sure that we do not "spill out"
+
+    idx = (this_mask_i >= 0) & (this_mask_i <= maxx) & (this_mask_j >= 0) & (this_mask_j <= maxy)
+
+    if np.sum(idx) == 0:
+
+        # empty region
+        flux = np.nan
+        flux_error = np.nan
+
+    else:
+
+        this_mask_i = this_mask_i[idx]
+        this_mask_j = this_mask_j[idx]
+
+        # Add the fluxes of the pixels within the bounding box
+
+        flux = np.sum(data[this_mask_i, this_mask_j])
+
+        # Now compute the error
+        counts_sum = np.sum(orig[this_mask_i, this_mask_j])
+
+        flux_error = np.sqrt(counts_sum + bkgd_uncertainty ** 2)
+
+    return flux, flux_error
+
+
+def _get_region(w, ds9_string):
+    """
+    Returns a mask which selects all the pixels within the provided region
+
+    :param w: The WCS from the header
+    :param ds9_string: The information for a region in a string format
+
+    :return mask array, corners of bounding box
+
+    """
+
+    # Get info about the region from the DS9 string
+    split = re.split("[, (\")]+", ds9_string)
+    shape = split[0]
+
+    assert shape == "circle", "Only circular regions are supported"
+
+    ra = float(split[1])
+    dec = float(split[2])
+    diameter = float(split[3]) * 2
+
+    # Get the diameter in pixels assuming that the diameter is the same in WCS for all regions
+    pixel_scale = proj_plane_pixel_scales(w)
+    assert np.isclose(pixel_scale[0], pixel_scale[1],
+                      rtol=1e-2), "Pixel scale is different between X and Y direction"
+    pixel_scale_with_units = pixel_scale[0] * u.Unit(w.wcs.cunit[0])
+    pixel_scale_arcsec = pixel_scale_with_units.to("arcsec").value
+
+    diameter_pix = np.ceil(diameter / pixel_scale_arcsec)
+
+    # Find the smallest square around the region
+    x_and_y = w.wcs_world2pix([[ra, dec]], 0)
+    x_and_y = str(x_and_y).replace(']', '').replace('[', '').split()
+    x = np.floor(float(x_and_y[0]))
+    y = np.floor(float(x_and_y[1]))
+
+    # Make a region object given the information found previously
+    reg = CircularRegion(x, y, diameter_pix)
+
+    return reg
 
 
 class DataDatabase(object):
@@ -37,7 +130,8 @@ class DataDatabase(object):
         if first == False:
             assert os.path.exists(dbname), "Database %s does not exist" % dbname
 
-        self.db = database_io.SqliteDatabase(dbname)
+        #self.db = database_io.SqliteDatabase(dbname)
+        self.db = database_io.HDF5Database(dbname)
 
         self.db.connect()
 
@@ -77,211 +171,25 @@ class DataDatabase(object):
 
         return len(indices)
 
+    def _get_c_type(self, data):
 
-    def init_flux_tables(self, num_regs):
-        '''
-        Inserts empty flux tables into the database.
+        np_type = data.dtype.name
 
-        :param num_regs: Number of regions, and thus the number of flux tables
+        if np_type == 'float64':
 
-        :return None
-        '''
-        # Write the fluxes to the database
+            c_type = ctypes.c_double
 
+        elif np_type == 'float32':
 
-        # with database_io.bulk_operation(self.db):
-        #
-        #     # Create first table
-        #
-        #     flux_dataframe = pd.DataFrame(columns=['flux', 'err'], dtype=float)
-        #     self.db.insert_dataframe(flux_dataframe, 'flux_table_1', commit=True)
-        #
-        #     # Now duplicate it (much faster than just creating new ones)
-        #
-        #     for r in loop_with_progress(range(1, num_regs), num_regs - 1, 1000, my_printer):
-        #
-        #         self.db.duplicate_table('flux_table_1', 'flux_table_%i' % (r + 1), commit=False)
+            c_type = ctypes.c_float
 
-        with database_io.bulk_operation(self.db):
+        else:
 
-            # Insert many tables
-            class hack(object):
+            raise TypeError("Type %s not supported" % np_type)
 
-                def __init__(self, db):
+        return c_type, np_type
 
-                    self._giant_query = []
-                    self._db = db
-
-                def __call__(self, *args, **kwargs):
-
-                    if self._giant_query:
-                        log.info("Writing %s tables" % len(self._giant_query))
-                        self._db.cursor.executescript(";".join(self._giant_query))
-                        self._giant_query = []
-
-                    log.info(*args, **kwargs)
-
-
-            create_table_cmd = 'CREATE TABLE "flux_table_%i" ("flux" REAL, "err" REAL)'
-
-            my_printer = hack(self.db)
-
-            for r in loop_with_progress(range(num_regs), num_regs, 50000, my_printer):
-
-                my_printer._giant_query.append(create_table_cmd % (r+1))
-
-        self.db.connection.commit()
-
-        return None
-
-
-    def init_cond_table(self):
-        '''
-        Inserts an empty conditions table into the database.
-
-        :return: None
-        '''
-
-        cond_dataframe = pd.DataFrame(columns=['date (modified Julian)', 'duration (s)', 'seeing (")'], dtype=float)
-        self.db.insert_dataframe(cond_dataframe, 'cond_table')
-
-        return None
-
-
-    def _get_distances(self, x, y, x2, y2):
-        '''
-        Get the distance between two points.
-
-        :param x: x-coordinate(s) of the first point(s)
-        :param y: y-coordinate(s) of the first point(s)
-        :param x2: x-coordinate(s) of the second point(s)
-        :param y2: y-coordinate(s) of the second point(s)
-
-        :return distances: An array of the distances between the pairs of points given
-        '''
-
-        distances = np.sqrt((x - x2) ** 2 + (y - y2) ** 2)
-
-        return distances
-
-
-    def _find_pixels_in_region(self, w, ds9_string, max_coords):
-        """
-        Returns a mask which selects all the pixels within the provided region
-
-        :param w: The WCS from the header
-        :param ds9_string: The information for a region in a string format
-        :param max_coords: The maximum pixel coordinates of the image
-
-        :return mask array, corners of bounding box
-
-        """
-
-        # Get info about the region from the DS9 string
-        split = re.split("[, (\")]+", ds9_string)
-        shape = split[0]
-        ra = float(split[1])
-        dec = float(split[2])
-        diameter = float(split[3]) * 2
-
-        # Get the diameter in pixels assuming that the diameter is the same in WCS for all regions
-        pixel_scale = proj_plane_pixel_scales(w)
-        assert np.isclose(pixel_scale[0], pixel_scale[1],
-                          rtol=1e-2), "Pixel scale is different between X and Y direction"
-        pixel_scale_with_units = pixel_scale[0] * u.Unit(w.wcs.cunit[0])
-        pixel_scale_arcsec = pixel_scale_with_units.to("arcsec").value
-
-        diameter_pix = np.ceil(diameter / pixel_scale_arcsec)
-
-        if shape == 'box':
-            rotation = split[5]
-
-        # Find the smallest square around the region
-        x_and_y = w.wcs_world2pix([[ra, dec]], 0)
-        x_and_y = str(x_and_y).replace(']', '').replace('[', '').split()
-        x = np.floor(float(x_and_y[0]))
-        y = np.floor(float(x_and_y[1]))
-
-        # Make a region object given the information found previously
-        reg = Region(x, y, diameter_pix, shape)
-
-        # Maximum pixel coordinates
-        max_coords = str(max_coords[0]).replace('(', '').replace(')', '').split()
-        max_x = max_coords[0].replace(',', '')
-        max_y = max_coords[1]
-
-        # Find the bounding box around the region
-        corner1, corner2, corner3, corner4 = reg.get_boundingbox(max_x, max_y)
-
-        # Get the pixel coordinates of the pixels within the bounding box
-        in_bounding_box_x = np.arange(corner1[0], corner3[0])
-        in_bounding_box_y = np.arange(corner1[1], corner2[1])
-        cart_prod = cartesian_product([in_bounding_box_x, in_bounding_box_y]).T
-        all_in_bdb_x = cart_prod[0]
-        all_in_bdb_y = cart_prod[1]
-        distances = self._get_distances(reg.x, reg.y, all_in_bdb_x, all_in_bdb_y)
-
-        in_region = distances <= (diameter_pix / 2.0)
-
-        return in_region, corner1, corner2, corner3, corner4
-
-
-    def _get_data_in_region(self, data, in_region, corner1, corner2, corner3, corner4):
-        '''
-
-        :param data: Background-subtracted data from the image
-        :param in_region: Mask to check whether the data is within the region
-        :param corner1: Bottom left corner of the bounding box
-        :param corner2: Top left corner of the bounding box
-        :param corner3: Bottom right corner of the bounding box
-        :param corner4: Top right corner of the bounding box
-
-        :return: The masked data for the region
-        '''
-
-        # Select first elements within the bounding box
-        reg_data = data[corner1[1]:corner2[1], corner1[0]:corner3[0]]
-
-        # Now flatten the remaining oversampled_bkgsub_image and apply the in_region mask, selecting the pixels within the
-        # region
-        reg_data = reg_data.flatten()
-
-        return reg_data[in_region]
-
-
-    def _sum_flux(self, oversampled_bkgsub_image, in_region, corner1, corner2, corner3, corner4,
-                  oversampled_counts_image, bkgd_uncertainty):
-        '''
-        Adds the flux from each pixel within the region in order to get the total flux for the region.
-
-        :param oversampled_bkgsub_image: The data array of the background-subtracted image to be examined (the fluxes)
-        :param in_region: Mask to check whether the data is within the region
-        :param corner1: Bottom left corner of the bounding box
-        :param corner2: Top left corner of the bounding box
-        :param corner3: Bottom right corner of the bounding box
-        :param corner4: Top right corner of the bounding box
-        :param oversampled_counts_image: The data array of the image before background-subtraction
-        :param bkgd_uncertainty: The error value for the background
-
-        :return Total flux and flux error for this region
-        '''
-
-        # Add the fluxes of the pixels within the bounding box
-        reg_data = self._get_data_in_region(oversampled_bkgsub_image,
-                                            in_region,
-                                            corner1, corner2, corner3, corner4)  # type: np.ndarray
-        sum_flux = np.sum(reg_data)
-
-        reg_data_counts = self._get_data_in_region(oversampled_counts_image,
-                                                   in_region,
-                                                   corner1, corner2, corner3, corner4)  # type: np.ndarray
-
-        flux_error = np.sqrt(np.sum(reg_data_counts) + bkgd_uncertainty ** 2)
-
-        return sum_flux, flux_error
-
-
-    def _get_fluxes(self, reg, data, orig, header, bkgd_uncertainty):
+    def _get_fluxes(self, reg, data, orig, header, bkgd_uncertainty, pool=None):
         '''
         Gets the fluxes for all of the regions in the image.
 
@@ -294,6 +202,11 @@ class DataDatabase(object):
         :return fluxes: An array of the fluxes and flux errors for each region in the image
         '''
 
+        import pdb;pdb.set_trace()
+
+        global data_t
+        global orig_t
+
         # Get the number of regions and use this number to initialize an array that will store the fluxes for each region
         num_regs = len(reg.index)
         fluxes = np.zeros(num_regs)
@@ -302,25 +215,127 @@ class DataDatabase(object):
         # Add the fluxes within each region by calling _sum_flux
         log.info("Measuring flux for each region\n")
 
+        # We need the WCS
+
         w = wcs.WCS(header)
-        max_coords = [(header['NAXIS1'], header['NAXIS2'])]
 
-        for i in range(num_regs):
+        # NOTE: regions are indexed starting from 1, not 0
 
-            # Get the ds9 definition
-            ds9_string = reg.get_value(i, "ds9_info")
+        # First we consider the region in the center, and we compute its mask. Then we will just shift that mask
+        # of the appropriate distance to get the mask for all other regions (much faster than recomputing it all the
+        # time)
 
-            in_region, corner1, corner2, corner3, corner4 = self._find_pixels_in_region(w,
-                                                                                        ds9_string,
-                                                                                        max_coords)
+        # Get size of the first region
+        region_diameter_pixels = _get_region(w, reg.get_value(1, "ds9_info")).d
 
-            if (i + 1) % 1000 == 0:
-                log.info("Processed region %i of %i" % (i + 1, num_regs))
+        # Get the mask from the central region
+        central_region = CircularRegion(np.ceil(data.shape[0] / 2.0), np.ceil(data.shape[1] / 2.0),
+                                        region_diameter_pixels)
 
-            # Call the helper method to get the sum of the flux from all the pixels in the region
-            flux, error = self._sum_flux(data, in_region, corner1, corner2, corner3, corner4, orig, bkgd_uncertainty)
-            fluxes[i] = flux
-            fluxes_errors[i] = error
+        mask = central_region.compute_mask(data)
+
+        # Now get its center in pixel (so later we can compute by how much we need to move the mask)
+        mask_x = central_region.x
+        mask_y = central_region.y
+
+        # Divide the mask into its x and y coordinates
+        nz = mask.nonzero()
+        mask_x_nonzero = nz[0]  # type: np.ndarray
+        mask_y_nonzero = nz[1] # type: np.ndarray
+
+        maxx = data.shape[0] - 1
+        maxy = data.shape[1] - 1
+
+        # Make a copy of the data in a form that multiprocessing can share
+        data_c_type, data_np_type = self._get_c_type(data)
+        scaled_data_nobkgd_shared = multiprocessing.Array(data_c_type, data.size)
+        scaled_data_nobkgd_shared[:] = data.flatten()
+
+        orig_c_type, orig_np_type = self._get_c_type(orig)
+        orig_shared = multiprocessing.Array(orig_c_type, orig.size)
+        orig_shared[:] = orig.flatten()
+
+        data_t[:] = (scaled_data_nobkgd_shared, data_np_type, data.shape)
+        orig_t[:] = (orig_shared, orig_np_type, orig.shape)
+
+        partial_worker = functools.partial(worker, w=w, mask_x=mask_x, mask_y=mask_y,
+                                           mask_x_nonzero=mask_x_nonzero, mask_y_nonzero=mask_y_nonzero,
+                                           bkgd_uncertainty=bkgd_uncertainty,
+                                           maxx=maxx, maxy=maxy)
+
+        #print map(partial_worker, reg['ds9_info'].values[0:10])
+
+        chunksize = 40000
+
+        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
+
+        try:
+
+            for i, (fl, fl_error) in loop_with_progress(pool.imap(partial_worker, reg['ds9_info'], chunksize=chunksize),
+                                                            reg['ds9_info'].shape[0], chunksize, log.info,
+                                                            with_enumerate=True):
+
+                fluxes[i] = fl
+                fluxes_errors[i] = fl_error
+
+        except:
+
+            raise
+
+        finally:
+
+            pool.close()
+
+        # for i in loop_with_progress(range(1, num_regs+1), num_regs, 10000, my_print):
+        #
+        #     # Get the ds9 definition
+        #     ds9_string = reg.get_value(i, "ds9_info")
+        #
+        #     this_region = _get_region(w, ds9_string)
+        #
+        #     # Now shift the mask
+        #     # NOTE that by definition these are integers because the regions are built by shifting them by integer
+        #     # amount of pixels
+        #     dx = int(this_region.x - mask_x)
+        #     dy = int(this_region.y - mask_y)
+        #
+        #     this_mask_i = mask_x_nonzero + dx
+        #     this_mask_j = mask_y_nonzero + dy
+        #
+        #     # Make sure that we do not "spill out"
+        #
+        #     idx = numexpr.evaluate("(this_mask_i >= 0) & (this_mask_i <= maxx) & "
+        #                            "(this_mask_j >= 0) & (this_mask_j <= maxy)")
+        #
+        #     if np.sum(idx) == 0:
+        #
+        #         # empty region
+        #         flux = np.nan
+        #         flux_error = np.nan
+        #
+        #         n_zeros += 1
+        #
+        #     else:
+        #
+        #         this_mask_i = this_mask_i[idx]
+        #         this_mask_j = this_mask_j[idx]
+        #
+        #         # Add the fluxes of the pixels within the bounding box
+        #
+        #         flux = np.sum(data[this_mask_i, this_mask_j])
+        #
+        #         # Now compute the error
+        #         counts_sum = np.sum(orig[this_mask_i, this_mask_j])
+        #
+        #         flux_error = np.sqrt(counts_sum + bkgd_uncertainty ** 2)
+        #
+        #         n_non_zeros += 1
+        #
+        #     fluxes[i-1] = flux
+        #     fluxes_errors[i-1] = flux_error
+
+        log.info("Median value for the regions: %.3f" % np.nanmedian(fluxes))
+        log.info("Median error for the regions: %.3f" % np.nanmedian(fluxes_errors))
 
         return fluxes, fluxes_errors
 
@@ -388,40 +403,51 @@ class DataDatabase(object):
         # Loop through the visit files
         n_visits_in_this_chunk = len(headers_nobkgd)
 
-        for i in range(0, n_visits_in_this_chunk):
+        try:
 
-            log.info("Processing file %i of %i..." % ((i+1), n_visits_in_this_chunk))
+            for i in range(0, n_visits_in_this_chunk):
 
-            log.debug("oversampling")
+                log.info("Processing file %i of %i..." % ((i+1), n_visits_in_this_chunk))
 
-            # Oversample the background-subtracted, the original images, and the mask images.
-            scale_factor = 2
+                log.debug("oversampling")
 
-            scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], scale_factor)
+                # Oversample the background-subtracted, the original images, and the mask images.
+                scale_factor = 2
 
-            scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], scale_factor)
+                scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], scale_factor)
 
-            scaled_data_mask, scaled_wcs_mask = oversample(data_masks[i], headers_masks[i], scale_factor,
-                                                           method='nearest')
+                scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], scale_factor)
 
-            log.debug("Getting background uncertainty")
-            # Get the background error (which is the same for all regions)
-            background_uncertainty = self._get_background_uncertainty(scaled_data_nobkgd, scaled_data_orig,
-                                                                      scaled_data_mask)
-            # Get the fluxes for each region for the scaled images
-            log.debug("Getting fluxes for each region")
+                scaled_data_mask, scaled_wcs_mask = oversample(data_masks[i], headers_masks[i], scale_factor,
+                                                               method='nearest')
 
-            fluxes_nobkgd, fluxes_errors = self._get_fluxes(reg, scaled_data_nobkgd, scaled_data_orig,
-                                                            scaled_wcs_nobkgd, background_uncertainty)
+                log.debug("Getting background uncertainty")
+                # Get the background error (which is the same for all regions)
+                background_uncertainty = self._get_background_uncertainty(scaled_data_nobkgd, scaled_data_orig,
+                                                                          scaled_data_mask)
+                # Get the fluxes for each region for the scaled images
+                log.debug("Getting fluxes for each region")
 
-            # Normalize the scaled images
-            norm_factor = scale_factor * 2
+                fluxes_nobkgd, fluxes_errors = self._get_fluxes(reg, scaled_data_nobkgd, scaled_data_orig,
+                                                                scaled_wcs_nobkgd, background_uncertainty,
+                                                                pool=None)
 
-            fluxes_nobkgd /= norm_factor
+                # Normalize the scaled images
+                norm_factor = scale_factor * 2
 
-            # Arrays store the fluxes and flux errors for each region for each visit.
-            visit_fluxes.append(fluxes_nobkgd)
-            visit_errs.append(fluxes_errors)
+                fluxes_nobkgd /= norm_factor
+
+                # Arrays store the fluxes and flux errors for each region for each visit.
+                visit_fluxes.append(fluxes_nobkgd)
+                visit_errs.append(fluxes_errors)
+
+        except:
+
+            raise
+
+        finally:
+
+            pool.close()
 
         # Switch the order of the arrays in order to store the data
         region_fluxes = np.swapaxes(visit_fluxes, 0, 1)
@@ -429,28 +455,14 @@ class DataDatabase(object):
 
         # Write the fluxes to the database
         log.info("Writing to database...\n")
-        dataframes = []
 
-        for r in range(0, num_regs):
-
-            if (r + 1) % 100 == 0:
-                log.info("Processed region %i of %i" % (r + 1, num_regs))
+        for r in loop_with_progress(range(num_regs), num_regs, 10000, log.info, False):
 
             flux_dataframe = pd.DataFrame(columns=['flux', 'err'])
             flux_dataframe['flux'] = region_fluxes[r]
             flux_dataframe['err'] = region_errs[r]
-            dataframes.append(flux_dataframe)
 
-        # Insert many tables that will be committed when the database is disconnected.
-
-        with database_io.bulk_operation(self.db):
-
-            for r in range(0, num_regs):
-
-                if r % 100 == 0:
-                    log.info("Inserted table %i of %i" % (r + 1, num_regs))
-
-                self.db.append_dataframe_to_table(dataframes[r], 'flux_table_%i' % (r + 1), commit=False)
+            self.db.insert_dataframe(flux_dataframe, 'flux_table_%i' % (r + 1))
 
         return None
 
@@ -482,7 +494,8 @@ class DataDatabase(object):
         # Write the seeings and durations to the dataframe
         cond_dataframe = pd.DataFrame.from_dict(
             {'duration (s)': series1, 'seeing (")': series2, 'date (modified Julian)': series3})
-        self.db.append_dataframe_to_table(cond_dataframe, 'cond_table')
+
+        self.db.insert_dataframe(cond_dataframe, 'cond_table')
 
         return None
 
