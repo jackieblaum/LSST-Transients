@@ -220,7 +220,7 @@ class DataDatabase(object):
 
         return fluxes, fluxes_errors
 
-    def _fill_cond(self, headers):
+    def _fill_cond(self, headers, obsids):
         '''
         Fills the dataframe with the conditions for each visit (seeing, duration, and date). Seeing at 5000 angstrom (sigma)
 
@@ -232,7 +232,7 @@ class DataDatabase(object):
         seeings = []
         durations = []
         dates = []
-        visit_index = range(1, len(headers) + 1)
+        # visit_index = range(1, len(headers) + 1)
 
         # Loop through the headers in order to read the seeing, duration, and date for each visit
         for header in headers:
@@ -240,9 +240,9 @@ class DataDatabase(object):
             seeings.append(1.00)
             dates.append(float(header['MJD-OBS']))
 
-        series1 = pd.Series(durations, index=visit_index)
-        series2 = pd.Series(seeings, index=visit_index)
-        series3 = pd.Series(dates, index=visit_index)
+        series1 = pd.Series(durations, index=obsids)
+        series2 = pd.Series(seeings, index=obsids)
+        series3 = pd.Series(dates, index=obsids)
 
         # Write the seeings and durations to the dataframe
         cond_dataframe = pd.DataFrame.from_dict(
@@ -296,8 +296,8 @@ class DataDatabase(object):
         # Sort in tuples works by using the first element in each tuple
         times_with_visits.sort()
 
-        visits_sorted = map(lambda x:x[1], times_with_visits[:3])
-        obsid_sorted = map(lambda x:x[2], times_with_visits[:3])
+        visits_sorted = map(lambda x:x[1], times_with_visits)
+        obsid_sorted = map(lambda x:x[2], times_with_visits)
 
         return visits_sorted, obsid_sorted
 
@@ -392,7 +392,7 @@ class DataDatabase(object):
             df_errors[obsid] = fluxes_errors
             # Conditions are seeing, date, and so on, for each visit
 
-        self._fill_cond(headers_prim)
+        self._fill_cond(headers_prim, obsid_sorted)
 
         self.db.insert_dataframe(df, "fluxes")
         self.db.insert_dataframe(df_errors, "fluxes_errors")
