@@ -7,7 +7,7 @@ import logging
 import astropy.units as u
 import astropy.io.fits as pyfits
 
-from lsst_transients.region import Region
+from lsst_transients.circular_region import CircularRegion
 from astropy import wcs
 from astropy.wcs.utils import proj_plane_pixel_scales
 from lsst_transients.oversample_image import oversample
@@ -48,7 +48,7 @@ class Data_Database(object):
         '''
         Fills the database with the string for each region as seen in DS9.
         
-        :param regfile: Region file created using lsst_grid_generator_shapes.py
+        :param regfile: CircularRegion file created using lsst_grid_generator_shapes.py
 
         :return The number of regions
         '''
@@ -176,7 +176,7 @@ class Data_Database(object):
         y = np.floor(float(x_and_y[1]))
 
         # Make a region object given the information found previously
-        reg = Region(x, y, diameter_pix, shape)
+        reg = CircularRegion(x, y, diameter_pix, shape)
         
         # Maximum pixel coordinates
         max_coords = str(max_coords[0]).replace('(','').replace(')','').split()

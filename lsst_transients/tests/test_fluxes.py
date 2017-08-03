@@ -17,12 +17,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     db = Database("test1.db")
+
     db.fill_visits(args.path, args.filter, args.flux, args.conditions)
 
     db2 = DataDatabase("test2.db", first=False)
     db2.fill_visits(args.path, args.filter, args.flux, args.conditions)
     fluxes1 = db.get_flux_list()
     fluxes2 = db2.get_flux_list()
+
+    import pdb;pdb.set_trace()
+
     assert np.allclose(fluxes1, fluxes2, rtol=0.15), "New fluxes do not match pyregion fluxes:" \
                                                                 "\nPyregion: %s\n " \
                                                                 "New: %s" \

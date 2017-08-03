@@ -1,13 +1,16 @@
 import numpy as np
+import re
 
-from lsst_transients.utils.cartesian_product import cartesian_product
+import pyregion
+from astropy.wcs.utils import proj_plane_pixel_scales
+import astropy.units as u
 
 class CircularRegion(object):
     '''
     A CircularRegion object is a square or circular region, many of which form a grid.
     '''
 
-    def __init__(self, x, y, d):
+    def __init__(self, x, y, d, ds9_string=None):
         '''
         Constructs a CircularRegion object.
 
@@ -22,6 +25,58 @@ class CircularRegion(object):
         self._diameter_pixels = d
 
         self._mask = None
+
+        self._ds9_string = ds9_string
+
+        if self._ds9_string is not None:
+
+            self._pyregion = pyregion.parse(self._ds9_string)
+
+    @classmethod
+    def from_ds9_region(cls, w, ds9_string):
+        """
+        Returns a mask which selects all the pixels within the provided region
+
+        :param w: The WCS from the header
+        :param ds9_string: The information for a region in a string format
+
+        :return mask array, corners of bounding box
+
+        """
+
+        # Get info about the region from the DS9 string
+        split = re.split("[, (\")]+", ds9_string)
+        shape = split[0]
+
+        assert shape == "circle", "Only circular regions are supported"
+
+        ra = float(split[1])
+        dec = float(split[2])
+        diameter = float(split[3]) * 2
+
+        # Get the diameter in pixels assuming that the diameter is the same in WCS for all regions
+
+        pixel_scale = proj_plane_pixel_scales(w)
+
+        assert np.isclose(pixel_scale[0], pixel_scale[1],
+                          rtol=1e-2), "Pixel scale is different between X and Y direction"
+
+        # We take the geometric average of the pixel scales in the X and Y direction, as done
+        # in pyregion
+
+        pixel_scale_with_units = (pixel_scale[0] * pixel_scale[1])**0.5 * u.Unit(w.wcs.cunit[0])
+
+        pixel_scale_arcsec = pixel_scale_with_units.to("arcsec").value
+
+        diameter_pix = diameter / pixel_scale_arcsec
+
+        # Find the smallest square around the region
+        x, y = w.all_world2pix([[ra, dec]], 0)[0]
+
+        # Make a region object given the information found previously
+        reg = cls(x, y, diameter_pix, ds9_string=ds9_string)
+
+        return reg
 
     @property
     def x(self):
@@ -54,7 +109,10 @@ class CircularRegion(object):
 
         :return: a string in the form "box(_x, _y, width, height, angle)" to create a box region in DS9
         '''
-        return "circle(" + str(self.x) + ", " + str(self._y) + ", " + str(self._diameter_pixels) + ")"
+
+        r = 'image;circle(%s,%s,%s)' % (self.x, self.y, self._diameter_pixels/2.0)
+
+        return r
 
     def _fix_x(self, x, data_shape):
 
@@ -89,29 +147,27 @@ class CircularRegion(object):
                 self._fix_point(corner3, data_shape),
                 self._fix_point(corner4, data_shape)]
 
-    def _get_distances(self, x, y, x2, y2):
-        '''
-        Get the distance between two points.
-
-        :param x: x-coordinate(s) of the first point(s)
-        :param y: y-coordinate(s) of the first point(s)
-        :param x2: x-coordinate(s) of the second point(s)
-        :param y2: y-coordinate(s) of the second point(s)
-
-        :return distances: An array of the distances between the pairs of points given
-        '''
-
-        distances = np.sqrt((x - x2) ** 2 + (y - y2) ** 2)
-
-        return distances
-
     def compute_mask(self, data_array):
 
         nx, ny = data_array.shape
-        y, x = np.ogrid[-self.x:nx - self.x, -self.y:ny - self.y]
-        mask = (x * x + y * y <= (self._diameter_pixels / 2.0)**2)  # type: np.ndarray
+
+        # We need to start at 1 because ds9 regions follow the FORTRAN convention (arrays start at 1)
+
+        y, x = np.ogrid[1:nx+1, 1:ny+1]
+
+        mask = ((x-self.x)**2 + (y-self.y)**2 <= (self._diameter_pixels / 2.0)**2)  # type: np.ndarray
 
         self._mask = mask
+
+        return mask
+
+    def _compute_mask_pyregion(self, data, header):
+
+        #reg_definition = 'icrs;%s' % ds9_string.replace(" ", "")
+
+        filt = self._pyregion.as_imagecoord(header).get_filter()
+
+        mask = filt.mask(data)
 
         return mask
 

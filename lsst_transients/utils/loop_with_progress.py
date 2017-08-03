@@ -2,7 +2,7 @@ import time
 import datetime
 
 
-def loop_with_progress(iterator, n_iter, progress_step, printer_function):
+def loop_with_progress(iterator, n_iter, progress_step, printer_function, with_enumerate=False):
     """
     Generator which prints progress for loops
 
@@ -18,7 +18,13 @@ def loop_with_progress(iterator, n_iter, progress_step, printer_function):
 
     for i, obj in enumerate(iterator):
 
-        yield obj
+        if with_enumerate:
+
+            yield i, obj
+
+        else:
+
+            yield obj
 
         if (i+1) % progress_step == 0:
 

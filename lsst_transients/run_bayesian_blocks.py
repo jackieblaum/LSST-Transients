@@ -4,6 +4,10 @@ import yaml
 
 from astropy.stats import bayesian_blocks
 from lsst_transients.data_database import DataDatabase
+from lsst_transients.utils.loop_with_progress import loop_with_progress
+from lsst_transients.utils.logging_system import get_logger
+
+log = get_logger(__name__)
 
 
 class BayesianBlocks(object):
@@ -12,6 +16,7 @@ class BayesianBlocks(object):
     '''
 
     def __init__(self, dbname, filename, min_blocks):
+
         self.database = DataDatabase("%s.db" % dbname)
 
         # Get the number of regions
@@ -88,45 +93,25 @@ class BayesianBlocks(object):
         # Loop over all the regions and run Bayesian_Blocks on each of them
         print("Running the Bayesian Block algorithm on each region...")
 
-        # We will plot later
-        fig, subs = plt.subplots(1, self.num_regs, figsize=(75, 10))
-
         # Erase any existing file with the same name, create new file
         with open(self.file, "w") as f:
             pass
 
-        for i in range(1, self.num_regs+1):
+        df = self.database.db.get_table_as_dataframe('fluxes')
+        df_errors = self.database.db.get_table_as_dataframe('fluxes_errors')
 
-            if i%100 == 0:
-                print("Processed table %i of %i" % (i, self.num_regs))
-
-            df = self.database.db.get_table_as_dataframe('flux_table_%i' % i)
-
-            # Make sure that both columns are floats
-            df['flux'] = np.array(df['flux'], float)
-            df['err'] = np.array(df['err'], float)
+        for i, regid in loop_with_progress(df.index, len(df.index), len(df.index) // 50,
+                                           log.info, with_enumerate=True):
 
             # flux_tables.append(df)
 
-            edges = bayesian_blocks(t=times, x=df['flux'].values, sigma=df['err'].values, fitness='measures', p0=1e-3)
-            print("Completed region %i of %i" % (i, self.num_regs))
-            print edges
+            edges = bayesian_blocks(t=times, x=df.loc[regid].values, sigma=df_errors.loc[regid].values,
+                                    fitness='measures', p0=1e-3)
             d = {}
+
             if len(edges) >= self.min_blocks:
                 d['reg%i' % i] = edges.tolist()
                 self._append_edges(d)
-
-            # Plot and save
-            subs[i-1].errorbar(times, df['flux'].values, yerr=df['err'].values, fmt='.')
-            subs[i-1].set_title('reg%i' % i)
-            #subs[i-1].set_ylim([-3000,3000])
-
-            subs[i-1].set_yscale("symlog")
-
-            for j in range(0,len(edges)):
-                subs[i-1].axvline(edges.item(j), linestyle='--')
-
-        fig.savefig("plot.png")
 
         self.database.close()
 

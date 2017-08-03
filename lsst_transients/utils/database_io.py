@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 from pandas.io.sql import get_schema as pd_get_schema
 
+
 from file_io import sanitize_filename
 
 
@@ -31,29 +32,35 @@ def bulk_operation(db_instance):
     :return:
     """
 
-    # Deactivate writing on disk at every iteration
+    if isinstance(db_instance, SqliteDatabase):
 
-    db_instance.query("PRAGMA synchronous=OFF")
-    db_instance.query("PRAGMA LOCKING_MODE=EXCLUSIVE")
-    db_instance.query("PRAGMA automatic_index = FALSE")
-    db_instance.query("PRAGMA JOURNAL_MODE=OFF")
+        # Deactivate writing on disk at every iteration
 
-    try:
+        db_instance.query("PRAGMA synchronous=OFF")
+        db_instance.query("PRAGMA LOCKING_MODE=EXCLUSIVE")
+        db_instance.query("PRAGMA automatic_index = FALSE")
+        db_instance.query("PRAGMA JOURNAL_MODE=OFF")
+
+        try:
+
+            yield
+
+        except:
+
+            raise
+
+        finally:
+
+            # We need to commit before reactivating the synchronous mode, otherwise sqlite3 will fail
+
+            db_instance.connection.commit()
+
+            db_instance.query("PRAGMA synchronous=ON")
+            db_instance.query("PRAGMA LOCKING_MODE=NORMAL")
+
+    else:
 
         yield
-
-    except:
-
-        raise
-
-    finally:
-
-        # We need to commit before reactivating the synchronous mode, otherwise sqlite3 will fail
-
-        db_instance.connection.commit()
-
-        db_instance.query("PRAGMA synchronous=ON")
-        db_instance.query("PRAGMA LOCKING_MODE=NORMAL")
 
 
 class SqliteDatabase(object):
@@ -270,3 +277,34 @@ class SqliteDatabase(object):
         my_query = 'SELECT * FROM %s' % table_name
 
         return pd.read_sql_query(my_query, self._connection)
+
+
+class HDF5Database(object):
+
+    def __init__(self, database_file):
+
+        # Sanitize the file name (expand env. variables, relative paths and so on)
+
+        self._database_file = sanitize_filename(database_file)
+
+        self._store = None
+
+    def connect(self):
+
+        self._store = pd.HDFStore(self._database_file)
+
+    def disconnect(self):
+
+        self._store.close()
+
+    def insert_dataframe(self, dataframe, table_name):
+
+        assert self._store is not None, "You need to connect to the database before trying to insert data in it"
+
+        self._store.put(table_name, dataframe)
+
+    def get_table_as_dataframe(self, table_name, where=None):
+
+        assert self._store is not None, "You need to connect to the database before trying to get data from it"
+
+        return self._store.select(table_name, where=where)

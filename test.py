@@ -5,7 +5,7 @@ from lsst_transients.utils import database_io
 
 
 
-regfile = '/home/jrblaum/lsst_transients/test/supernova_test.reg'
+regfile = 'supernova_test.reg'
 
 with open(regfile) as f:
     i=0
@@ -28,7 +28,7 @@ reg_dataframe.to_sql("reg_dataframe", connection, if_exists='replace', index_lab
 connection.close()
 
 dbname = 'test2.db'
-db = database_io.SqliteDatabase(dbname)
+db = database_io.HDF5Database(dbname)
 db.connect()
 
 db.insert_dataframe(reg_dataframe, 'reg_dataframe')

@@ -2,115 +2,22 @@ import pandas as pd
 import numpy as np
 import os
 import re
-import functools
-import multiprocessing
+import photutils
 import ctypes
 
 import astropy.units as u
 import astropy.io.fits as pyfits
-
-from circular_region import CircularRegion
+from astropy.coordinates import SkyCoord
 from astropy import wcs
-from astropy.wcs.utils import proj_plane_pixel_scales
+
 from oversample_image import oversample
+from circular_region import CircularRegion
 from utils import database_io
 from utils.chuncker import chunker
 from utils.logging_system import get_logger
 from utils.loop_with_progress import loop_with_progress
 
 log = get_logger(os.path.basename(__file__))
-
-# These two globals will be used to store a shared array between the processes when computing the fluxes
-# Unfortunately having global variables is the only way to share memory between processes
-data_t = [None, None, None]
-orig_t = [None, None, None]
-
-
-def worker(ds9_string, w, mask_x, mask_y, mask_x_nonzero, mask_y_nonzero, bkgd_uncertainty, maxx, maxy):
-
-    # Gather the data and the orig array from the shared multiprocessing array
-    # and transform them back to numpy (note that this does not copy the data, it only re-interprets them)
-    data = np.frombuffer(data_t[0].get_obj(), dtype=data_t[1]).reshape(data_t[2])
-    orig = np.frombuffer(orig_t[0].get_obj(), dtype=orig_t[1]).reshape(orig_t[2])
-
-    this_region = _get_region(w, ds9_string)
-
-    # Now shift the mask
-    # NOTE that by definition these are integers because the regions are built by shifting them by integer
-    # amount of pixels
-    dx = int(this_region.x - mask_x)
-    dy = int(this_region.y - mask_y)
-
-    this_mask_i = mask_x_nonzero + dx  # type: np.ndarray
-    this_mask_j = mask_y_nonzero + dy  # type: np.ndarray
-
-    # Make sure that we do not "spill out"
-
-    idx = (this_mask_i >= 0) & (this_mask_i <= maxx) & (this_mask_j >= 0) & (this_mask_j <= maxy)
-
-    if np.sum(idx) == 0:
-
-        # empty region
-        flux = np.nan
-        flux_error = np.nan
-
-    else:
-
-        this_mask_i = this_mask_i[idx]
-        this_mask_j = this_mask_j[idx]
-
-        # Add the fluxes of the pixels within the bounding box
-
-        flux = np.sum(data[this_mask_i, this_mask_j])
-
-        # Now compute the error
-        counts_sum = np.sum(orig[this_mask_i, this_mask_j])
-
-        flux_error = np.sqrt(counts_sum + bkgd_uncertainty ** 2)
-
-    return flux, flux_error
-
-
-def _get_region(w, ds9_string):
-    """
-    Returns a mask which selects all the pixels within the provided region
-
-    :param w: The WCS from the header
-    :param ds9_string: The information for a region in a string format
-
-    :return mask array, corners of bounding box
-
-    """
-
-    # Get info about the region from the DS9 string
-    split = re.split("[, (\")]+", ds9_string)
-    shape = split[0]
-
-    assert shape == "circle", "Only circular regions are supported"
-
-    ra = float(split[1])
-    dec = float(split[2])
-    diameter = float(split[3]) * 2
-
-    # Get the diameter in pixels assuming that the diameter is the same in WCS for all regions
-    pixel_scale = proj_plane_pixel_scales(w)
-    assert np.isclose(pixel_scale[0], pixel_scale[1],
-                      rtol=1e-2), "Pixel scale is different between X and Y direction"
-    pixel_scale_with_units = pixel_scale[0] * u.Unit(w.wcs.cunit[0])
-    pixel_scale_arcsec = pixel_scale_with_units.to("arcsec").value
-
-    diameter_pix = np.ceil(diameter / pixel_scale_arcsec)
-
-    # Find the smallest square around the region
-    x_and_y = w.wcs_world2pix([[ra, dec]], 0)
-    x_and_y = str(x_and_y).replace(']', '').replace('[', '').split()
-    x = np.floor(float(x_and_y[0]))
-    y = np.floor(float(x_and_y[1]))
-
-    # Make a region object given the information found previously
-    reg = CircularRegion(x, y, diameter_pix)
-
-    return reg
 
 
 class DataDatabase(object):
@@ -189,7 +96,7 @@ class DataDatabase(object):
 
         return c_type, np_type
 
-    def _get_fluxes(self, reg, data, orig, header, bkgd_uncertainty, pool=None):
+    def _get_fluxes(self, reg, data, orig, header, bkgd_uncertainty, apertures):
         '''
         Gets the fluxes for all of the regions in the image.
 
@@ -202,137 +109,26 @@ class DataDatabase(object):
         :return fluxes: An array of the fluxes and flux errors for each region in the image
         '''
 
-        import pdb;pdb.set_trace()
-
-        global data_t
-        global orig_t
-
-        # Get the number of regions and use this number to initialize an array that will store the fluxes for each region
-        num_regs = len(reg.index)
-        fluxes = np.zeros(num_regs)
-        fluxes_errors = np.zeros(num_regs)
-
         # Add the fluxes within each region by calling _sum_flux
-        log.info("Measuring flux for each region\n")
+        log.info("Measuring flux for each region...")
 
         # We need the WCS
 
         w = wcs.WCS(header)
 
-        # NOTE: regions are indexed starting from 1, not 0
+        fluxes_table = photutils.aperture_photometry(data, apertures, wcs=w)
 
-        # First we consider the region in the center, and we compute its mask. Then we will just shift that mask
-        # of the appropriate distance to get the mask for all other regions (much faster than recomputing it all the
-        # time)
+        log.info("done")
 
-        # Get size of the first region
-        region_diameter_pixels = _get_region(w, reg.get_value(1, "ds9_info")).d
+        fluxes = fluxes_table['aperture_sum'].data
 
-        # Get the mask from the central region
-        central_region = CircularRegion(np.ceil(data.shape[0] / 2.0), np.ceil(data.shape[1] / 2.0),
-                                        region_diameter_pixels)
+        log.info("Computing errors...")
 
-        mask = central_region.compute_mask(data)
+        counts_sum = photutils.aperture_photometry(orig, apertures, wcs=w)
 
-        # Now get its center in pixel (so later we can compute by how much we need to move the mask)
-        mask_x = central_region.x
-        mask_y = central_region.y
+        fluxes_errors = np.sqrt(counts_sum['aperture_sum'].data + bkgd_uncertainty**2)
 
-        # Divide the mask into its x and y coordinates
-        nz = mask.nonzero()
-        mask_x_nonzero = nz[0]  # type: np.ndarray
-        mask_y_nonzero = nz[1] # type: np.ndarray
-
-        maxx = data.shape[0] - 1
-        maxy = data.shape[1] - 1
-
-        # Make a copy of the data in a form that multiprocessing can share
-        data_c_type, data_np_type = self._get_c_type(data)
-        scaled_data_nobkgd_shared = multiprocessing.Array(data_c_type, data.size)
-        scaled_data_nobkgd_shared[:] = data.flatten()
-
-        orig_c_type, orig_np_type = self._get_c_type(orig)
-        orig_shared = multiprocessing.Array(orig_c_type, orig.size)
-        orig_shared[:] = orig.flatten()
-
-        data_t[:] = (scaled_data_nobkgd_shared, data_np_type, data.shape)
-        orig_t[:] = (orig_shared, orig_np_type, orig.shape)
-
-        partial_worker = functools.partial(worker, w=w, mask_x=mask_x, mask_y=mask_y,
-                                           mask_x_nonzero=mask_x_nonzero, mask_y_nonzero=mask_y_nonzero,
-                                           bkgd_uncertainty=bkgd_uncertainty,
-                                           maxx=maxx, maxy=maxy)
-
-        #print map(partial_worker, reg['ds9_info'].values[0:10])
-
-        chunksize = 40000
-
-        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
-
-        try:
-
-            for i, (fl, fl_error) in loop_with_progress(pool.imap(partial_worker, reg['ds9_info'], chunksize=chunksize),
-                                                            reg['ds9_info'].shape[0], chunksize, log.info,
-                                                            with_enumerate=True):
-
-                fluxes[i] = fl
-                fluxes_errors[i] = fl_error
-
-        except:
-
-            raise
-
-        finally:
-
-            pool.close()
-
-        # for i in loop_with_progress(range(1, num_regs+1), num_regs, 10000, my_print):
-        #
-        #     # Get the ds9 definition
-        #     ds9_string = reg.get_value(i, "ds9_info")
-        #
-        #     this_region = _get_region(w, ds9_string)
-        #
-        #     # Now shift the mask
-        #     # NOTE that by definition these are integers because the regions are built by shifting them by integer
-        #     # amount of pixels
-        #     dx = int(this_region.x - mask_x)
-        #     dy = int(this_region.y - mask_y)
-        #
-        #     this_mask_i = mask_x_nonzero + dx
-        #     this_mask_j = mask_y_nonzero + dy
-        #
-        #     # Make sure that we do not "spill out"
-        #
-        #     idx = numexpr.evaluate("(this_mask_i >= 0) & (this_mask_i <= maxx) & "
-        #                            "(this_mask_j >= 0) & (this_mask_j <= maxy)")
-        #
-        #     if np.sum(idx) == 0:
-        #
-        #         # empty region
-        #         flux = np.nan
-        #         flux_error = np.nan
-        #
-        #         n_zeros += 1
-        #
-        #     else:
-        #
-        #         this_mask_i = this_mask_i[idx]
-        #         this_mask_j = this_mask_j[idx]
-        #
-        #         # Add the fluxes of the pixels within the bounding box
-        #
-        #         flux = np.sum(data[this_mask_i, this_mask_j])
-        #
-        #         # Now compute the error
-        #         counts_sum = np.sum(orig[this_mask_i, this_mask_j])
-        #
-        #         flux_error = np.sqrt(counts_sum + bkgd_uncertainty ** 2)
-        #
-        #         n_non_zeros += 1
-        #
-        #     fluxes[i-1] = flux
-        #     fluxes_errors[i-1] = flux_error
+        log.info("done")
 
         log.info("Median value for the regions: %.3f" % np.nanmedian(fluxes))
         log.info("Median error for the regions: %.3f" % np.nanmedian(fluxes_errors))
@@ -378,94 +174,51 @@ class DataDatabase(object):
         return np.array(this_data, dtype=dtype)
 
 
-    def _fill_flux(self, headers_nobkgd, data_nobkgd, headers_orig, data_orig, headers_masks, data_masks):
-        '''
-        Fills the dataframe with the flux and the flux error for each region with the indices as the visit number.
+    def _get_region_fluxes(self, header_nobkgd, data_nobkgd, data_orig, data_masks, apertures):
+        """
+        Get the flux and its error for each region in this visit
 
-        :param headers_nobkgd: An array of the headers from the background-subtracted images from each of the visits
-        :param data_nobkgd: An array of the data from the background-subtracted images from each of the visits
-        :param headers_orig: An array of the headers from the original images from each of the visits
-        :param data_orig: An array of the data from the original images from each of the visits
-        :param headers_masks: An array of the headers from the mask images from each of the visits
-        :param data_masks: An array of the data from the mask images from each of the visits
+        :param header_nobkgd:
+        :param data_nobkgd:
+        :param data_orig:
+        :param data_masks:
+        :param apertures:
+        :return:
+        """
 
-        :return None
-        '''
+        log.debug("Getting background uncertainty")
 
-        # Arrays for all the visits that will store arrays of fluxes and flux errors for each region
-        visit_fluxes = []
-        visit_errs = []
+        # Get the background error (which is the same for all regions)
+        background_uncertainty = self._get_background_uncertainty(data_nobkgd, data_orig, data_masks)
 
-        # Access the regions table in the database in order to find the number of regions
-        reg = self.db.get_table_as_dataframe('reg_dataframe')
-        num_regs = len(reg.index)
+        # Add the fluxes within each region by calling _sum_flux
+        log.info("Measuring flux for each region...")
 
-        # Loop through the visit files
-        n_visits_in_this_chunk = len(headers_nobkgd)
+        # We need the WCS
 
-        try:
+        w = wcs.WCS(header_nobkgd)
 
-            for i in range(0, n_visits_in_this_chunk):
+        apertures_pix = apertures.to_pixel(w)
 
-                log.info("Processing file %i of %i..." % ((i+1), n_visits_in_this_chunk))
+        fluxes_table = photutils.aperture_photometry(data_nobkgd, apertures_pix, error=np.sqrt(data_orig),
+                                                     method='exact')
 
-                log.debug("oversampling")
+        log.info("done")
 
-                # Oversample the background-subtracted, the original images, and the mask images.
-                scale_factor = 2
+        fluxes = fluxes_table['aperture_sum'].data
 
-                scaled_data_nobkgd, scaled_wcs_nobkgd = oversample(data_nobkgd[i], headers_nobkgd[i], scale_factor)
+        log.info("Computing errors...")
 
-                scaled_data_orig, scaled_wcs_orig = oversample(data_orig[i], headers_orig[i], scale_factor)
+        # Adding the background uncertainty to the photometric uncertainty
 
-                scaled_data_mask, scaled_wcs_mask = oversample(data_masks[i], headers_masks[i], scale_factor,
-                                                               method='nearest')
+        fluxes_errors = np.sqrt(fluxes_table['aperture_sum_err'].data ** 2 + background_uncertainty ** 2)
 
-                log.debug("Getting background uncertainty")
-                # Get the background error (which is the same for all regions)
-                background_uncertainty = self._get_background_uncertainty(scaled_data_nobkgd, scaled_data_orig,
-                                                                          scaled_data_mask)
-                # Get the fluxes for each region for the scaled images
-                log.debug("Getting fluxes for each region")
+        log.info("done")
 
-                fluxes_nobkgd, fluxes_errors = self._get_fluxes(reg, scaled_data_nobkgd, scaled_data_orig,
-                                                                scaled_wcs_nobkgd, background_uncertainty,
-                                                                pool=None)
+        log.info("Median value for the regions: %.3f" % np.nanmedian(fluxes))
+        log.info("Median error for the regions: %.3f" % np.nanmedian(fluxes_errors))
 
-                # Normalize the scaled images
-                norm_factor = scale_factor * 2
-
-                fluxes_nobkgd /= norm_factor
-
-                # Arrays store the fluxes and flux errors for each region for each visit.
-                visit_fluxes.append(fluxes_nobkgd)
-                visit_errs.append(fluxes_errors)
-
-        except:
-
-            raise
-
-        finally:
-
-            pool.close()
-
-        # Switch the order of the arrays in order to store the data
-        region_fluxes = np.swapaxes(visit_fluxes, 0, 1)
-        region_errs = np.swapaxes(visit_errs, 0, 1)
-
-        # Write the fluxes to the database
-        log.info("Writing to database...\n")
-
-        for r in loop_with_progress(range(num_regs), num_regs, 10000, log.info, False):
-
-            flux_dataframe = pd.DataFrame(columns=['flux', 'err'])
-            flux_dataframe['flux'] = region_fluxes[r]
-            flux_dataframe['err'] = region_errs[r]
-
-            self.db.insert_dataframe(flux_dataframe, 'flux_table_%i' % (r + 1))
-
-        return None
-
+        return fluxes, fluxes_errors
 
     def _fill_cond(self, headers):
         '''
@@ -499,23 +252,17 @@ class DataDatabase(object):
 
         return None
 
-    def fill_visits(self, path, filter, flux, conditions, chunk_size=10):
-        '''
-        Fills the dataframes that are indexed by visits. It first fills the flux tables and then fills the conditions table.
+    def _find_visits_files(self, path, selected_filter):
+        """
+        Finds all visits files and return them in a list ordered by observation time
 
-        :param path: The path to folder with all visit files
-        :param flux: True if the flux tables should be filled, False otherwise
-        :param conditions: True if the conditions table should be filled, False otherwise
-        :param filter: the filter to select
-        :param chunk_size: The number of visit files to loop through at a time, default=10
-
-        :return None
-        '''
-
-        log.info("Collecting headers and data from the visit files...\n")
+        :param path:
+        :return:
+        """
 
         # Collect all the visit files from the directory
-        files_set = []
+        times_with_visits = []
+
         for root, dirs, files in os.walk(path):
 
             for name in files:
@@ -528,67 +275,127 @@ class DataDatabase(object):
 
                     try:
 
-                        this_filter = pyfits.getval(filename, "FILTER", ext=0)
+                        with pyfits.open(filename) as f:
+
+                            this_filter = f[0].header["FILTER"]
+                            observation_time = f[0].header['MJD-OBS']
+                            obsid = f[0].header['OBSID']
 
                     except:
 
-                        # Could not read FILTER, probably not the image we are looking for
-
-                        continue
+                        raise
 
                     else:
 
                         # Add if it matches the filter we are looking for
 
-                        if this_filter.replace(" ", "") == filter:
-                            files_set.append(filename)
+                        if this_filter.replace(" ", "") == selected_filter:
 
-        # Sort the visit files based on Modified Julian Time
-        times_with_visits = []
-
-        for f in files_set:
-            times_with_visits.append((pyfits.getheader(f, 0)['MJD-OBS'], f))
+                            times_with_visits.append((observation_time, filename, obsid))
 
         # Sort in tuples works by using the first element in each tuple
         times_with_visits.sort()
 
-        visits_sorted = [files_set for times, files_set in times_with_visits]
+        visits_sorted = map(lambda x:x[1], times_with_visits[:3])
+        obsid_sorted = map(lambda x:x[2], times_with_visits[:3])
 
-        # Collect all the necessary headers from each visit file
+        return visits_sorted, obsid_sorted
 
-        # Loop through in chunks of visits
-        for i, chunk in enumerate(chunker(visits_sorted, chunk_size)):
+    def _get_apertures(self):
 
-            log.info("Processing chunk %i of %i..." % (i + 1, len(visits_sorted) // chunk_size + 1))
+        # Access the regions table in the database in order to find the number of regions
+        reg = self.db.get_table_as_dataframe('reg_dataframe')
+        num_regs = len(reg.index)
 
-            # Arrays of headers and data. There will be one from each visit in the directory.
-            headers_prim = []
-            headers_nobkgd = []
-            headers_orig = []
-            headers_masks = []
-            data_masks = []
-            data_nobkgd = []
-            data_orig = []
+        # Make the aperture regions
+        radiuses = np.zeros(num_regs)
+        ras = np.zeros(num_regs)
+        decs = np.zeros(num_regs)
 
-            for filename in chunk:
-                with pyfits.open(filename) as f:
-                    headers_prim.append(f[0].header)
-                    headers_nobkgd.append(f[1].header)
-                    data_nobkgd.append(f[1].data)
-                    data_masks.append(f[2].data)
-                    headers_masks.append(f[2].header)
-                    headers_orig.append(f[3].header)
-                    data_orig.append(f[3].data)
+        for i in range(num_regs):
+            ds9_string = reg.get_value(i + 1, "ds9_info")
+
+            split = re.split("[, (\")]+", ds9_string)
+            shape = split[0]
+
+            assert shape == "circle", "Only circles are supported at this point"
+
+            ra = float(split[1])
+            dec = float(split[2])
+            radius = float(split[3])
+
+            ras[i] = ra
+            decs[i] = dec
+            radiuses[i] = radius
+
+        # NOTE: we assume all apertures have the same radius
+        r = np.unique(radiuses)
+        assert r.shape[0] == 1, "Regions have different radiuses!"
+
+        apertures = photutils.SkyCircularAperture(SkyCoord(ra=ras * u.deg, dec=decs * u.deg, frame='icrs'),
+                                                  r[0] * u.arcsec)
+
+        return apertures, len(ras)
+
+    def fill_visits(self, path, selected_filter, flux, conditions, chunk_size=10):
+        '''
+        Fills the dataframes that are indexed by visits. It first fills the flux tables and then fills the conditions table.
+
+        :param path: The path to folder with all visit files
+        :param flux: True if the flux tables should be filled, False otherwise
+        :param conditions: True if the conditions table should be filled, False otherwise
+        :param selected_filter: the filter to select
+        :param chunk_size: The number of visit files to loop through at a time, default=10
+
+        :return None
+        '''
+
+        log.info("Selecting visits...")
+
+        visits_sorted, obsid_sorted = self._find_visits_files(path, selected_filter)
+
+        log.info("Found %i visits" % len(visits_sorted))
+
+        log.info("Setting up regions...")
+        all_apertures, n_regions = self._get_apertures()
+
+        log.info("Found %i regions" % n_regions)
+
+        # Loop through the visits
+
+        df = pd.DataFrame(columns=obsid_sorted)
+        df_errors = pd.DataFrame(columns=obsid_sorted)
+
+        headers_prim = []
+
+        for i, (visit_file, obsid) in loop_with_progress(zip(visits_sorted, obsid_sorted),
+                                                         len(visits_sorted), 1, log.info, with_enumerate=True):
+
+            log.info("Processing visit %i of %i..." % (i + 1, len(visits_sorted)))
+
+            with pyfits.open(visit_file) as f:
+
+                headers_prim.append(f[0].header)
+
+                header_nobkgd = f[1].header
+                data_nobkgd = f[1].data
+
+                data_orig = f[3].data
+                data_mask = f[2].data
 
             # Call helper methods to fill in the fluxes and conditions for these visits
 
-            if flux:
-                self._fill_flux(headers_nobkgd, data_nobkgd, headers_orig, data_orig, headers_masks, data_masks)
+            fluxes, fluxes_errors = self._get_region_fluxes(header_nobkgd, data_nobkgd, data_orig, data_mask,
+                                                            all_apertures)
 
+            df[obsid] = fluxes
+            df_errors[obsid] = fluxes_errors
             # Conditions are seeing, date, and so on, for each visit
 
-            if conditions:
-                self._fill_cond(headers_prim)
+        self._fill_cond(headers_prim)
+
+        self.db.insert_dataframe(df, "fluxes")
+        self.db.insert_dataframe(df_errors, "fluxes_errors")
 
         return None
 
@@ -600,11 +407,16 @@ class DataDatabase(object):
         reg = self.db.get_table_as_dataframe('reg_dataframe')
         num_regs = len(reg.index)
 
-        fluxes = []
+        fluxes = {}
+
         for i in range(1,num_regs+1):
+
             df = self.db.get_table_as_dataframe('flux_table_%i' % i)
-            for j in range(len(df['flux'])):
-                fluxes.append(df['flux'][j])
+
+            fluxes_in_this_region = df['flux']
+
+            fluxes["region_%i" % i] = fluxes_in_this_region
+
         return fluxes
 
 

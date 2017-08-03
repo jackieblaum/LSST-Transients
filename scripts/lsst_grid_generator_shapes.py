@@ -14,7 +14,7 @@ log = get_logger(os.path.basename(__file__))
 if __name__ == "__main__":
 
     # Collect input from the user
-    parser = argparse.ArgumentParser(description="Grid Region Generator")
+    parser = argparse.ArgumentParser(description="Grid CircularRegion Generator")
     parser.add_argument('-i', '--input_example', type=str, help='FITS file for one of the visits', required=True)
     parser.add_argument('-d', '--diameter', type=float, help='Length of the sides or diameter of the regions in pixels',
                         required=True)
@@ -64,10 +64,6 @@ if __name__ == "__main__":
     # Write the regions to a database
     db = DataDatabase("%s.db" % args.name)
     num_regs = db.fill_reg(region_centers_wcs, args.shape, angular_distance_arcsec, rotation_angle)
-
-    # Initialize empty flux tables and condition table
-    db.init_flux_tables(num_regs)
-    db.init_cond_table()
     db.close()
 
     log.info("Input file: %s" % args.input_example)

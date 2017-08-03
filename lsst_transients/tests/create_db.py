@@ -322,10 +322,24 @@ class Database(object):
     def get_flux_list(self):
 
         flux_table = pd.read_sql_table("flux_table", self.connection)
-        fluxes = []
-        for j in range(len(flux_table.index)):
-            for i in range(1,len(flux_table.columns)):
-                fluxes.append(flux_table['flux%i'%i][j])
+
+        fluxes = {}
+
+        for i in range(1, len(flux_table.columns)):
+
+            this_region_fluxes = flux_table['flux%i' % i]
+
+            fluxes["region_%i" % i] = this_region_fluxes
+
+        # for j in range(len(flux_table.index)):
+        #
+        #     this_region_fluxes = []
+        #
+        #     for i in range(1,len(flux_table.columns)):
+        #
+        #         this_region_fluxes.append(flux_table['flux%i'%i][j])
+        #
+        #     fluxes[] = this_region_fluxes)
 
         return fluxes
         

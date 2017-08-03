@@ -3,7 +3,7 @@ import numpy as np
 from astropy.coordinates.angle_utilities import angular_separation
 
 from lsst_transients.data_database import DataDatabase
-from region import Region
+from circular_region import CircularRegion
 from utils.cartesian_product import cartesian_product
 from utils.pix2world import pix2world
 
@@ -50,8 +50,8 @@ class Grid(object):
 
     def _in_range(self, a_region):
         '''
-        A helper method used by do_steps() in order to determine if the Region is in range of the region of
-        interest and should be added to the Region array.
+        A helper method used by do_steps() in order to determine if the CircularRegion is in range of the region of
+        interest and should be added to the CircularRegion array.
 
         Returns true if out of range, returns false if in range.
 
@@ -77,10 +77,10 @@ class Grid(object):
     def _get_all_coords(self, delta):
         '''
         Compute the x- and y-coordinate for the centers of all regions in the grid by taking the cartesian product, then
-        create all the corresponding Region objects.
+        create all the corresponding CircularRegion objects.
 
         :param delta: The longest diagonal from the center of the image to the edge
-        :return: The Region objects for all regions in the grid
+        :return: The CircularRegion objects for all regions in the grid
         '''
 
         # Let's figure out the iteration we are in
@@ -97,8 +97,8 @@ class Grid(object):
         xs = np.linspace(start_x - steps * (self._d - self._overlap), start_x, steps + 1)
         ys = np.linspace(start_y - steps * (self._d - self._overlap), start_y, steps + 1)
 
-        # Get all the coordinate pairs and make the Region objects
-        this_regions = map(lambda (x, y): Region(x, y, self._d, self._shape), cartesian_product([xs, ys]))
+        # Get all the coordinate pairs and make the CircularRegion objects
+        this_regions = map(lambda (x, y): CircularRegion(x, y, self._d), cartesian_product([xs, ys]))
 
         return this_regions
 
@@ -119,9 +119,9 @@ class Grid(object):
     def _compute_grid(self):
         '''
         After finding the longest diagonal between the center and edge of the image, call _get_all_coords to get all the
-        Region objects, then make sure they are all within the desired bounds by calling _in_range.
+        CircularRegion objects, then make sure they are all within the desired bounds by calling _in_range.
 
-        :return: The array of Region objects that are within the bounds of the image.
+        :return: The array of CircularRegion objects that are within the bounds of the image.
         '''
 
         # Figure out maximum diagonal
