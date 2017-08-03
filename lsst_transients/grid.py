@@ -2,7 +2,6 @@ import astropy.units as u
 import numpy as np
 from astropy.coordinates.angle_utilities import angular_separation
 
-from lsst_transients.data_database import DataDatabase
 from circular_region import CircularRegion
 from utils.cartesian_product import cartesian_product
 from utils.pix2world import pix2world
