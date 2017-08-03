@@ -66,7 +66,7 @@ class BayesianBlocks(object):
         :return:
         '''
 
-        with open(self.file, "a") as f:
+        with open(self.file, "a+") as f:
             yaml.dump(d, f)
 
 
