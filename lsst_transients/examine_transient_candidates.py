@@ -27,7 +27,7 @@ def write_ds9_region_files(reg_ids, db):
     Writes all transient candidate regions to their own DS9 region files.
 
     :param reg_ids: The IDs of the transient candidate regions as found in the yaml file (ie. reg1)
-    :param db: The name of the database
+    :param db: The name of the _database
     :return: None
     '''
 
@@ -39,7 +39,7 @@ def write_ds9_region_files(reg_ids, db):
         # Region indices start at 0, so subtract one from the region ID
         reg_index = int(re.compile(r'(\d+)$').search(region).group(1)) - 1
 
-        # Get the DS9 region string from the database and write it to a new region file
+        # Get the DS9 region string from the _database and write it to a new region file
         with open('%s.reg' % region, "w+") as f:
 
             ds9_string = df['ds9_info'][reg_index]

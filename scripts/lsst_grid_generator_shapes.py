@@ -21,11 +21,11 @@ if __name__ == "__main__":
     parser.add_argument('-f', '--fraction', type=float, help='Fraction of the region for which they _overlap',
                         required=True)
     parser.add_argument('-s', '--shape', type=str, help='Either circle or square regions', required=True)
-    parser.add_argument('-n', '--name', type=str, help='Name of the database', required=True)
+    parser.add_argument('-n', '--name', type=str, help='Name of the _database', required=True)
 
     args = parser.parse_args()
 
-    # Make sure the database file does not exist
+    # Make sure the _database file does not exist
     if os.path.exists("%s.db" % args.name):
 
         raise IOError("Database %s already exists" % args.name)
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     log.info("Generated %i regions" % len(region_centers_wcs))
 
-    # Write the regions to a database
+    # Write the regions to a _database
     db = DataDatabase("%s.db" % args.name)
     num_regs = db.fill_reg(region_centers_wcs, args.shape, angular_distance_arcsec, rotation_angle)
     db.close()

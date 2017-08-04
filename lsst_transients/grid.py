@@ -11,7 +11,7 @@ from utils.pix2world import pix2world
 class Grid(object):
     '''
     A Grid object contains overlapping circular or square regions that can overlay an image. The regions can be stored
-    in a .reg file and in a database.
+    in a .reg file and in a _database.
     '''
 
     def __init__(self, xmin, xmax, ymin, ymax, overlapfactor, d, shape):
