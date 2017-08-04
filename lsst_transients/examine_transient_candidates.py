@@ -34,7 +34,7 @@ def write_ds9_region_file(region, df, directory):
     Writes all transient candidate regions to their own DS9 region files.
 
     :param reg_ids: The IDs of the transient candidate regions as found in the yaml file (ie. reg1)
-    :param db: The name of the database
+    :param db: The name of the _database
     :return: None
     '''
 

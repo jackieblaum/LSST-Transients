@@ -22,17 +22,17 @@ log.setLevel(logging.DEBUG)
 
 class Data_Database(object):
     '''
-    The DataDatabase class is used to create a database and write to different tables: a region table, a flux table for
+    The DataDatabase class is used to create a _database and write to different tables: a region table, a flux table for
     each region, and a conditions table.
     '''
     
     
     def __init__(self, dbname, first=True):
         '''
-        Initializes the database and opens a connection to the database.
+        Initializes the _database and opens a connection to the _database.
         
-        :param dbname: The name for the database
-        :param first: If the database has not yet been created, True, False otherwise
+        :param dbname: The name for the _database
+        :param first: If the _database has not yet been created, True, False otherwise
         '''
 
         if first==False:
@@ -46,7 +46,7 @@ class Data_Database(object):
         
     def fill_reg(self, regfile):
         '''
-        Fills the database with the string for each region as seen in DS9.
+        Fills the _database with the string for each region as seen in DS9.
         
         :param regfile: CircularRegion file created using lsst_grid_generator_shapes.py
 
@@ -85,13 +85,13 @@ class Data_Database(object):
 
     def init_flux_tables(self, num_regs):
         '''
-        Inserts empty flux tables into the database.
+        Inserts empty flux tables into the _database.
 
         :param num_regs: Number of regions, and thus the number of flux tables
 
         :return None
         '''
-        # Write the fluxes to the database
+        # Write the fluxes to the _database
 
         # Insert many tables
 
@@ -110,7 +110,7 @@ class Data_Database(object):
 
     def init_cond_table(self):
         '''
-        Inserts an empty conditions table into the database.
+        Inserts an empty conditions table into the _database.
 
         :return: None
         '''
@@ -291,7 +291,7 @@ class Data_Database(object):
         visit_fluxes = []
         visit_errs = []
         
-        # Access the regions table in the database in order to find the number of regions
+        # Access the regions table in the _database in order to find the number of regions
         reg = self.db.get_table_as_dataframe('reg_dataframe')
         num_regs = len(reg.index)
 
@@ -344,8 +344,8 @@ class Data_Database(object):
         region_fluxes = np.swapaxes(visit_fluxes, 0, 1)
         region_errs = np.swapaxes(visit_errs, 0, 1)
         
-        # Write the fluxes to the database
-        print("Writing to database...\n")
+        # Write the fluxes to the _database
+        print("Writing to _database...\n")
         dataframes = []
 
         for r in range(0,num_regs):
@@ -359,7 +359,7 @@ class Data_Database(object):
             flux_dataframe['err'] = region_errs[r]
             dataframes.append(flux_dataframe)
 
-        # Insert many tables that will be committed when the database is disconnected.
+        # Insert many tables that will be committed when the _database is disconnected.
 
         with database_io.bulk_operation(self.db):
 
@@ -480,12 +480,12 @@ class Data_Database(object):
         
     def close(self):
         '''
-        Closes the connection to the database.
+        Closes the connection to the _database.
 
         :return None
         '''
 
-        # Disconnecting the database writes any uncommitted information to the database
+        # Disconnecting the _database writes any uncommitted information to the _database
         self.db.disconnect()
 
         print("Closed successfully")

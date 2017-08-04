@@ -7,7 +7,7 @@ if __name__ == "__main__":
 
     # Collect input from the user
     parser = argparse.ArgumentParser(description="Collect information from each visit")
-    parser.add_argument('-n', '--name', type=str, help='Name of the database (without .db)', required=True)
+    parser.add_argument('-n', '--name', type=str, help='Name of the _database (without .db)', required=True)
     parser.add_argument('-f', '--file', type=str, help='Name of the yaml file in which the blocks are stored '
                                                         '(without .yml)', required=True)
     parser.add_argument('-m', '--multiply', type=int, help='Size of the images will be this many times the '

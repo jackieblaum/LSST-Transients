@@ -11,7 +11,7 @@ def test_database_io():
 
     database_name = "test.db"
 
-    # Remove database if it exists
+    # Remove _database if it exists
 
     try:
 
@@ -21,7 +21,7 @@ def test_database_io():
 
         pass
 
-    # Fake data to insert into the database
+    # Fake data to insert into the _database
 
     df = pd.DataFrame()
 
@@ -52,7 +52,7 @@ def test_database_io():
 
     db.disconnect()
 
-    # Remove the database so we do not leave things around after the test is done
+    # Remove the _database so we do not leave things around after the test is done
 
     try:
 

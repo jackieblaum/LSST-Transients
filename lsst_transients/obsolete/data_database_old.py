@@ -78,16 +78,16 @@ def worker(ds9_string, w, mask_x, mask_y, mask_i_nonzero, mask_j_nonzero, bkgd_u
 
 class DataDatabase(object):
     '''
-    The DataDatabase class is used to create and handle a database and write to different tables: a region table,
+    The DataDatabase class is used to create and handle a _database and write to different tables: a region table,
     a flux table for each region, and a conditions table.
     '''
 
     def __init__(self, dbname, first=True):
         '''
-        Initializes the database and opens a connection to the database.
+        Initializes the _database and opens a connection to the _database.
 
-        :param dbname: The name for the database
-        :param first: If the database has not yet been created, True, False otherwise
+        :param dbname: The name for the _database
+        :param first: If the _database has not yet been created, True, False otherwise
         '''
 
         if first == False:
@@ -100,7 +100,7 @@ class DataDatabase(object):
 
     def fill_reg(self, reg_list_wcs, shape, angular_distance_arcsec, rotation_angle):
         '''
-        Fills the database with the string for each region as seen in DS9.
+        Fills the _database with the string for each region as seen in DS9.
 
         :param reg_list_wcs: List of region centers (a list of tuples) in sky coordinates
 
@@ -248,7 +248,7 @@ class DataDatabase(object):
 
             pool.close()
 
-        # for i in loop_with_progress(range(1, num_regs+1), num_regs, 10000, my_print):
+        # for i in loop_with_progress(range(1, _n_regions+1), _n_regions, 10000, my_print):
         #
         #     # Get the ds9 definition
         #     ds9_string = reg.get_value(i, "ds9_info")
@@ -358,7 +358,7 @@ class DataDatabase(object):
         visit_fluxes = []
         visit_errs = []
 
-        # Access the regions table in the database in order to find the number of regions
+        # Access the regions table in the _database in order to find the number of regions
         reg = self.db.get_table_as_dataframe('reg_dataframe')
         num_regs = len(reg.index)
 
@@ -404,8 +404,8 @@ class DataDatabase(object):
         region_fluxes = np.swapaxes(visit_fluxes, 0, 1)
         region_errs = np.swapaxes(visit_errs, 0, 1)
 
-        # Write the fluxes to the database
-        log.info("Writing to database...\n")
+        # Write the fluxes to the _database
+        log.info("Writing to _database...\n")
 
         for r in loop_with_progress(range(num_regs), num_regs, 10000, log.info, False):
 
@@ -566,12 +566,12 @@ class DataDatabase(object):
 
     def close(self):
         '''
-        Closes the connection to the database.
+        Closes the connection to the _database.
 
         :return None
         '''
 
-        # Disconnecting the database writes any uncommitted information to the database
+        # Disconnecting the _database writes any uncommitted information to the _database
         self.db.disconnect()
 
         log.info("Database closed")

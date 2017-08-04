@@ -23,15 +23,15 @@ log.setLevel(logging.DEBUG)
 
 class Database(object):
     '''
-    The Database classed is used to create a database and write to three different tables: a region table, a flux table, and a conditions table.
+    The Database classed is used to create a _database and write to three different tables: a region table, a flux table, and a conditions table.
     '''
     
     
     def __init__(self, dbname, first=True):
         '''
-        Initializes the database engine and opens a connection to the database.
+        Initializes the _database engine and opens a connection to the _database.
         
-        :param dbname: The name for the database (no need to add .db at the end)
+        :param dbname: The name for the _database (no need to add .db at the end)
         '''
 
         if first == False:
@@ -43,7 +43,7 @@ class Database(object):
         
     def fill_reg(self, regfile):
         '''
-        #Fills the database with the string for each region as seen in DS9 and regID as the indices.
+        #Fills the _database with the string for each region as seen in DS9 and regID as the indices.
         
         :param regfile: Region file created using grid_generator_shapes.py
         '''
@@ -146,7 +146,7 @@ class Database(object):
         # An array for all the visits that will store arrays of fluxes and flux errors for each region
         visit_fluxes = []
         
-        # Access the regions table in the database
+        # Access the regions table in the _database
         reg = pd.read_sql_table("reg_dataframe", self.connection)
         
         num_regs = len(reg.index)
@@ -346,7 +346,7 @@ class Database(object):
         
     def close(self):
         '''
-        Closes the connection to the database.
+        Closes the connection to the _database.
         '''
         
         self.connection.close()

@@ -25,10 +25,10 @@ def bulk_operation(db_instance):
     """
     A context manager for bulk operations.
 
-    Use this if you need speed in a loop where you are writing a lot to the database. This sacrifices solidity against
+    Use this if you need speed in a loop where you are writing a lot to the _database. This sacrifices solidity against
     crashes in exchange for speed (a lot of speed)
 
-    :param db_instance: the instance of the database (you need to have called .connect() first)
+    :param db_instance: the instance of the _database (you need to have called .connect() first)
     :return:
     """
 
@@ -78,7 +78,7 @@ class SqliteDatabase(object):
 
     def connect(self):
         """
-        Connect to the database (and create if not existent)
+        Connect to the _database (and create if not existent)
 
         :return: None
         """
@@ -89,7 +89,7 @@ class SqliteDatabase(object):
 
     def disconnect(self, commit=True):
         """
-        Disconnect from the database
+        Disconnect from the _database
 
         :param commit: (default: True) commit the changes if any. Use False only if you are absolutely sure that there
          is no change to be written on disk
@@ -192,7 +192,7 @@ class SqliteDatabase(object):
 
     def remove_table(self, table_name, commit=True):
         """
-        Remove a table from the database
+        Remove a table from the _database
 
         :param table_name:
         :param commit:
@@ -299,12 +299,12 @@ class HDF5Database(object):
 
     def insert_dataframe(self, dataframe, table_name):
 
-        assert self._store is not None, "You need to connect to the database before trying to insert data in it"
+        assert self._store is not None, "You need to connect to the _database before trying to insert data in it"
 
         self._store.put(table_name, dataframe)
 
     def get_table_as_dataframe(self, table_name, where=None):
 
-        assert self._store is not None, "You need to connect to the database before trying to get data from it"
+        assert self._store is not None, "You need to connect to the _database before trying to get data from it"
 
         return self._store.select(table_name, where=where)

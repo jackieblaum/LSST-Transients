@@ -10,10 +10,7 @@ import astropy.io.fits as pyfits
 from astropy.coordinates import SkyCoord
 from astropy import wcs
 
-from oversample_image import oversample
-from circular_region import CircularRegion
 from utils import database_io
-from utils.chuncker import chunker
 from utils.logging_system import get_logger
 from utils.loop_with_progress import loop_with_progress
 
@@ -22,16 +19,16 @@ log = get_logger(os.path.basename(__file__))
 
 class DataDatabase(object):
     '''
-    The DataDatabase class is used to create and handle a database and write to different tables: a region table,
+    The DataDatabase class is used to create and handle a _database and write to different tables: a region table,
     a flux table for each region, and a conditions table.
     '''
 
     def __init__(self, dbname, first=True):
         '''
-        Initializes the database and opens a connection to the database.
+        Initializes the _database and opens a connection to the _database.
 
-        :param dbname: The name for the database
-        :param first: If the database has not yet been created, True, False otherwise
+        :param dbname: The name for the _database
+        :param first: If the _database has not yet been created, True, False otherwise
         '''
 
         if first == False:
@@ -44,7 +41,7 @@ class DataDatabase(object):
 
     def fill_reg(self, reg_list_wcs, shape, angular_distance_arcsec, rotation_angle):
         '''
-        Fills the database with the string for each region as seen in DS9.
+        Fills the _database with the string for each region as seen in DS9.
 
         :param reg_list_wcs: List of region centers (a list of tuples) in sky coordinates
 
@@ -198,10 +195,10 @@ class DataDatabase(object):
 
         w = wcs.WCS(header_nobkgd)
 
-        apertures_pix = apertures.to_pixel(w)
+        # Transforms all the regions in pixels coordinates
 
-        fluxes_table = photutils.aperture_photometry(data_nobkgd, apertures_pix, error=np.sqrt(data_orig),
-                                                     method='exact')
+        fluxes_table = photutils.aperture_photometry(data_nobkgd, apertures, error=np.sqrt(data_orig),
+                                                     method='exact', wcs=w)
 
         log.info("done")
 
@@ -299,11 +296,13 @@ class DataDatabase(object):
         visits_sorted = map(lambda x:x[1], times_with_visits)
         obsid_sorted = map(lambda x:x[2], times_with_visits)
 
+        assert np.all(np.array(obsid_sorted) == np.unique(obsid_sorted)), "Observation IDs are not unique"
+
         return visits_sorted, obsid_sorted
 
     def _get_apertures(self):
 
-        # Access the regions table in the database in order to find the number of regions
+        # Access the regions table in the _database in order to find the number of regions
         reg = self.db.get_table_as_dataframe('reg_dataframe')
         num_regs = len(reg.index)
 
@@ -368,10 +367,12 @@ class DataDatabase(object):
 
         headers_prim = []
 
+        n_failed = 0
+
         for i, (visit_file, obsid) in loop_with_progress(zip(visits_sorted, obsid_sorted),
                                                          len(visits_sorted), 1, log.info, with_enumerate=True):
 
-            log.info("Processing visit %i of %i..." % (i + 1, len(visits_sorted)))
+            log.info("Processing visit %i of %i (OBSID: %s)..." % (i + 1, len(visits_sorted), obsid))
 
             with pyfits.open(visit_file) as f:
 
@@ -384,18 +385,33 @@ class DataDatabase(object):
                 data_mask = f[2].data
 
             # Call helper methods to fill in the fluxes and conditions for these visits
+            try:
 
-            fluxes, fluxes_errors = self._get_region_fluxes(header_nobkgd, data_nobkgd, data_orig, data_mask,
-                                                            all_apertures)
+                fluxes, fluxes_errors = self._get_region_fluxes(header_nobkgd, data_nobkgd, data_orig, data_mask,
+                                                                all_apertures)
 
-            df[obsid] = fluxes
-            df_errors[obsid] = fluxes_errors
-            # Conditions are seeing, date, and so on, for each visit
+            except ValueError:
+
+                log.error("FAILED")
+
+                n_failed += 1
+
+                df[obsid] = -1e9
+                df_errors[obsid] = -1e9
+
+            else:
+
+                df[obsid] = fluxes
+                df_errors[obsid] = fluxes_errors
+
+        # Conditions are seeing, date, and so on, for each visit
 
         self._fill_cond(headers_prim, obsid_sorted)
 
         self.db.insert_dataframe(df, "fluxes")
         self.db.insert_dataframe(df_errors, "fluxes_errors")
+
+        log.info("Failed visits: %i" % n_failed)
 
         return None
 
@@ -422,12 +438,12 @@ class DataDatabase(object):
 
     def close(self):
         '''
-        Closes the connection to the database.
+        Closes the connection to the _database.
 
         :return None
         '''
 
-        # Disconnecting the database writes any uncommitted information to the database
+        # Disconnecting the _database writes any uncommitted information to the _database
         self.db.disconnect()
 
         log.info("Database closed")
