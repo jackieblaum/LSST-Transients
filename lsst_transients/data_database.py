@@ -252,7 +252,7 @@ class DataDatabase(object):
 
         return None
 
-    def _find_visits_files(self, path, selected_filter):
+    def find_visits_files(self, path, selected_filter):
         """
         Finds all visits files and return them in a list ordered by observation time
 
@@ -352,7 +352,7 @@ class DataDatabase(object):
 
         log.info("Selecting visits...")
 
-        visits_sorted, obsid_sorted = self._find_visits_files(path, selected_filter)
+        visits_sorted, obsid_sorted = self.find_visits_files(path, selected_filter)
 
         log.info("Found %i visits" % len(visits_sorted))
 
