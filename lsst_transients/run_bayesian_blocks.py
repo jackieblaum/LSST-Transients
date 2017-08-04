@@ -146,8 +146,6 @@ def bayesian_blocks(t, x, sigma, p0):
     return edges[change_points]
 
 
-
-
 class BayesianBlocks(object):
     '''
     Runs the Bayesian Block algorithm on the data.

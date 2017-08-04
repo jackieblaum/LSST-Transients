@@ -10,10 +10,7 @@ import astropy.io.fits as pyfits
 from astropy.coordinates import SkyCoord
 from astropy import wcs
 
-from oversample_image import oversample
-from circular_region import CircularRegion
 from utils import database_io
-from utils.chuncker import chunker
 from utils.logging_system import get_logger
 from utils.loop_with_progress import loop_with_progress
 
@@ -220,7 +217,7 @@ class DataDatabase(object):
 
         return fluxes, fluxes_errors
 
-    def _fill_cond(self, headers):
+    def _fill_cond(self, headers, obsids):
         '''
         Fills the dataframe with the conditions for each visit (seeing, duration, and date). Seeing at 5000 angstrom (sigma)
 
@@ -232,7 +229,7 @@ class DataDatabase(object):
         seeings = []
         durations = []
         dates = []
-        visit_index = range(1, len(headers) + 1)
+        # visit_index = range(1, len(headers) + 1)
 
         # Loop through the headers in order to read the seeing, duration, and date for each visit
         for header in headers:
@@ -240,9 +237,9 @@ class DataDatabase(object):
             seeings.append(1.00)
             dates.append(float(header['MJD-OBS']))
 
-        series1 = pd.Series(durations, index=visit_index)
-        series2 = pd.Series(seeings, index=visit_index)
-        series3 = pd.Series(dates, index=visit_index)
+        series1 = pd.Series(durations, index=obsids)
+        series2 = pd.Series(seeings, index=obsids)
+        series3 = pd.Series(dates, index=obsids)
 
         # Write the seeings and durations to the dataframe
         cond_dataframe = pd.DataFrame.from_dict(
@@ -408,7 +405,8 @@ class DataDatabase(object):
                 df_errors[obsid] = fluxes_errors
 
         # Conditions are seeing, date, and so on, for each visit
-        self._fill_cond(headers_prim)
+
+        self._fill_cond(headers_prim, obsid_sorted)
 
         self.db.insert_dataframe(df, "fluxes")
         self.db.insert_dataframe(df_errors, "fluxes_errors")
