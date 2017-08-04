@@ -39,13 +39,8 @@ def write_ds9_region_files(reg_ids, db, directory):
 
         reg_index = int(re.compile(r'(\d+)$').search(region).group(1))+1
 
-<<<<<<< HEAD
-        # Get the DS9 region string from the _database and write it to a new region file
-        with open('%s.reg' % region, "w+") as f:
-=======
         # Get the DS9 region string from the database and write it to a new region file
         with open('%s/%s.reg' % (directory, region), "w+") as f:
->>>>>>> 96e76530c999fe69ca5f575c761e22bd85a5d346
 
             ds9_string = df['ds9_info'][reg_index]
 
