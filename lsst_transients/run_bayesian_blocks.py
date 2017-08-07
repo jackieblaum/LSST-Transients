@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import numexpr
 import json
 import multiprocessing
@@ -7,6 +8,8 @@ import multiprocessing
 from lsst_transients.data_database import DataDatabase
 from lsst_transients.utils.loop_with_progress import loop_with_progress
 from lsst_transients.utils.logging_system import get_logger
+from lsst_transients.aperture_photometry import PHOTOMETRY_NULL_VALUE
+from lsst_transients.results import Results
 
 log = get_logger(__name__)
 
@@ -143,7 +146,26 @@ def bayesian_blocks(t, x, sigma, p0):
         ind = last[ind - 1]
     change_points = change_points[i_cp:]
 
-    return edges[change_points]
+    final_blocks = edges[change_points]
+
+    # Return also flux and errors
+    n_intervals = len(final_blocks) - 1
+    fluxes = np.zeros(n_intervals)
+    errors = np.zeros_like(fluxes)
+
+    for i in range(n_intervals):
+
+        tstart = final_blocks[i]
+        tstop = final_blocks[i+1]
+
+        idx = (t >= tstart) & (t <= tstop)
+
+        n = float(np.sum(idx))
+
+        fluxes[i] = np.sum(x[idx]) / n
+        errors[i] = np.sqrt(np.sum(sigma[idx]**2)) / n
+
+    return edges[change_points], fluxes, errors
 
 
 class BayesianBlocks(object):
@@ -153,97 +175,57 @@ class BayesianBlocks(object):
 
     def __init__(self, dbname, filename, min_blocks):
 
-        self._database = DataDatabase("%s.db" % dbname)
+        self._database = dbname
 
-        # Get the number of regions
-        reg = self._database.db.get_table_as_dataframe('reg_dataframe')
-        self._n_regions = len(reg.index)
-        self._json_filename = '%s.json' % filename
+        self._out_filename = filename
+
         self._minimum_number_of_blocks = min_blocks
 
-
-    def _sort_visits(self):
-        '''
-        Sort the visits by modified Julian time.
-
-        :return: None
-        '''
-
-        # Sort the visits in the conditions table based on time
-        df = self._database.db.get_table_as_dataframe('cond_table')
-        indices = df['date (modified Julian)'].argsort()
-        df = df.iloc[indices]
-
-        # Replace the data frame in the _database with the sorted version
-        self._database.db.remove_table('cond_table')
-        self._database.db.insert_dataframe(df, 'cond_table')
-        print(df)
-
-        # Use the same ordering for all of the flux tables
-
-        # Loop through the flux tables and sort the visits
-        for i in range(1, self._n_regions+1):
-
-            table_name = 'flux_table_%i' % i
-            df = self._database.db.get_table_as_dataframe(table_name)
-            df = df.iloc[indices]
-
-            self._database.db.remove_table(table_name)
-            self._database.db.insert_dataframe(df, table_name)
-            print(df)
-
-        return None
-
-    def run_algorithm(self, sort=True):
+    def run_algorithm(self, p0):
         '''
         Sort the visits if needed, then run the Bayesian Block algorithm on the data
 
-        :param sort: True if the visits still need to be sorted by time, false otherwise
+        :param p0: Null hypothesis for bayesian blocks
 
         :return: None
         '''
 
-        if sort:
+        with DataDatabase(self._database) as data:
 
-            print("Sorting the visits by time...")
-            self._sort_visits()
+            # Get the array of times for the visits from the _database
+            conditions = data.db.get_table_as_dataframe('cond_table')
 
-        # Get the array of times for the visits from the _database
-        conditions = self._database.db.get_table_as_dataframe('cond_table')
+            conditions['date (modified Julian)'] = np.array(conditions['date (modified Julian)'], float)
+            times = conditions['date (modified Julian)'].values
 
-        conditions['date (modified Julian)'] = np.array(conditions['date (modified Julian)'], float)
-        times = conditions['date (modified Julian)'].values
-
-        # Loop over all the regions and run Bayesian_Blocks on each of them
-        print("Running the Bayesian Block algorithm on each region...")
-
-        # Erase any existing file with the same name, create new file
-        with open(self._json_filename, "w") as f:
-            pass
-
-        df = self._database.db.get_table_as_dataframe('fluxes')
-        df_errors = self._database.db.get_table_as_dataframe('fluxes_errors')
+            df = data.db.get_table_as_dataframe('fluxes')
+            df_errors = data.db.get_table_as_dataframe('fluxes_errors')
 
         # Analyze in parallel
         def feeder():
 
             for regid in df.index:
 
-                yield times, df.loc[regid].values, df_errors.loc[regid].values
+                yield times, df.loc[regid].values, df_errors.loc[regid].values, p0, regid
 
         pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
 
-        all_edges = {}
+        results = Results()
+
+        # Loop over all the regions and run Bayesian_Blocks on each of them
+        print("Running the Bayesian Block algorithm on each region...")
 
         try:
 
-            for i, edges in loop_with_progress(pool.imap(worker, feeder(), chunksize=1000),
-                                               len(df.index), 1000 * multiprocessing.cpu_count(),
-                                               log.info, with_enumerate=True):
+            for i, (regid, edges, fluxes, errors) in loop_with_progress(pool.imap_unordered(worker, feeder(),
+                                                                                            chunksize=1000),
+                                                                        len(df.index),
+                                                                        1000 * multiprocessing.cpu_count(),
+                                                                        log.info, with_enumerate=True):
 
                 if len(edges) >= self._minimum_number_of_blocks:
 
-                    all_edges['reg%i' % i] = edges.tolist()
+                    results.add_candidate(regid, edges, fluxes, errors)
 
         except:
 
@@ -253,24 +235,22 @@ class BayesianBlocks(object):
 
             pool.close()
 
-        self._database.close()
+        log.info("Writing results...")
 
         # Write file
-        with open(self._json_filename, "w+") as f:
-
-            json.dump(all_edges, f)
-
-        return None
+        results.write_to(self._out_filename)
 
 
 def worker(args):
 
-    t, x, sigma = args
+    t, x, sigma, p0, regid = args
 
     x = np.array(x, dtype=float)
     sigma = np.array(sigma, dtype=float)
     t = np.array(t, dtype=float)
 
-    idx = np.isfinite(x)
+    idx = (x != PHOTOMETRY_NULL_VALUE)
 
-    return bayesian_blocks(t=t[idx], x=x[idx], sigma=sigma[idx], p0=1e-6)
+    edges, fluxes, errors = bayesian_blocks(t=t[idx], x=x[idx], sigma=sigma[idx], p0=p0)
+
+    return regid, edges, fluxes, errors
