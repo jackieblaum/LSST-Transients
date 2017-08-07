@@ -1,17 +1,24 @@
+import json
 import yaml
 import re
 import os
-import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import numpy as np
+import matplotlib.animation as animation
 
+from matplotlib import colors, cm, pyplot as plt
+from astropy import wcs
 
+from astropy.io import fits as pyfits
 from data_database import DataDatabase
+from circular_region import CircularRegion
 
-def get_regs_and_blk_edges(yaml_file):
+def get_regs_and_blk_edges(json_file):
 
     reg_ids = []
     block_edges = []
 
-    with open(yaml_file, "r+") as f:
+    with open(json_file, "r+") as f:
         file_contents = yaml.load(f)
 
         # Iterate over the dictionary with region IDs as keys and block edge arrays as values
@@ -23,63 +30,107 @@ def get_regs_and_blk_edges(yaml_file):
     return reg_ids, block_edges
 
 
-def write_ds9_region_files(reg_ids, db, directory):
+def write_ds9_region_file(region, df, directory):
     '''
     Writes all transient candidate regions to their own DS9 region files.
 
-    :param reg_ids: The IDs of the transient candidate regions as found in the yaml file (ie. reg1)
+    :param reg_ids: The IDs of the transient candidate regions as found in the json file (ie. reg1)
     :param db: The name of the _database
     :return: None
     '''
 
-    df = db.db.get_table_as_dataframe('reg_dataframe')
+    reg_index = int(re.compile(r'(\d+)$').search(region).group(1))+1
 
-    # Loop over the regions that contain transient candidates
-    for i, region in enumerate(reg_ids):
+    # Get the DS9 region string from the database and write it to a new region file
+    with open('%s/%s.reg' % (directory, region), "w+") as f:
 
-        reg_index = int(re.compile(r'(\d+)$').search(region).group(1))+1
+        ds9_string = df['ds9_info'][reg_index]
 
-        # Get the DS9 region string from the database and write it to a new region file
-        with open('%s/%s.reg' % (directory, region), "w+") as f:
+        f.write('icrs\n%s' % ds9_string)
 
-            ds9_string = df['ds9_info'][reg_index]
-
-            f.write('icrs\n%s' % ds9_string)
-
-def make_lightcurves(reg_ids, block_edges, db, directory):
-
-    df_fluxes = db.db.get_table_as_dataframe('fluxes')
-    df_errors = db.db.get_table_as_dataframe('fluxes_errors')
-
-    # Loop over the transient candidate regions
-    for i in range(len(reg_ids)):
-
-        reg_database_index = re.compile(r'(\d+)$').search(reg_ids[i]).group(1)
-
-        # Get the dataframe that corresponds with the region
-        cond = db.db.get_table_as_dataframe('cond_table')
-        times = cond['date (modified Julian)']
-
-        # Plot and save
-
-        plt.xlabel('Time (MJD)')
-        plt.ylabel('Flux')
-
-        plt.errorbar(times, df_fluxes.iloc[int(reg_database_index)].values,
-                     yerr=list(df_errors.iloc[int(reg_database_index)].values), fmt='.')
-        plt.title('Region %s Lightcurve' % reg_database_index)
-
-        #plt.yscale("symlog")
-
-        for j in range(len(block_edges[i])):
-            edge_lines = plt.axvline(block_edges[i][j], linestyle='--')
-            plt.setp(edge_lines, color='r', linewidth=2.0)
-
-        plt.savefig("%s/%s.png" % (directory, reg_ids[i]))
+    return ds9_string
 
 
+def make_lightcurve(region, block_edges, df_fluxes, df_errors, cond, times, directory):
 
-def examine_transient_candidates(database, block_edges_file):
+
+    reg_database_index = re.compile(r'(\d+)$').search(region).group(1)
+
+    # Plot and save
+
+    plt.xlabel('Time (MJD)')
+    plt.ylabel('Flux')
+
+    plt.errorbar(times, df_fluxes.iloc[int(reg_database_index)].values,
+                 yerr=list(df_errors.iloc[int(reg_database_index)].values), fmt='.')
+    plt.title('Region %s Lightcurve' % reg_database_index)
+
+    for j in range(len(block_edges)):
+        edge_lines = plt.axvline(block_edges[j], linestyle='--')
+        plt.setp(edge_lines, color='r', linewidth=2.0)
+
+    plt.savefig("%s/%s.png" % (directory, region))
+
+
+def make_image(region_str, multiply, visit):
+
+    # Get needed info from FITS file
+    with pyfits.open(visit) as f:
+        all_data = f[1].data
+        header = f[1].header
+
+    w = wcs.WCS(header)
+    maxi = all_data.shape[0]
+    maxj = all_data.shape[1]
+
+    reg = CircularRegion.from_ds9_region(w, region_str)
+    xcenter = reg.x
+    ycenter = reg.y
+    diameter_pix = reg.d
+
+    # Calculate the starting and ending coordinates that we want from the FITS file
+    xstart = xcenter - (diameter_pix * multiply)
+    ystart = ycenter - (diameter_pix * multiply)
+
+    istart = int(ystart)
+    jstart = int(xstart)
+
+    xend = xcenter + (diameter_pix * multiply)
+    yend = ycenter + (diameter_pix * multiply)
+
+    iend = int(yend)
+    jend = int(xend)
+
+    if istart > 0 and jstart > 0 and iend <= maxi and jend <= maxj:
+        selected_data = all_data[istart:iend, jstart:jend]
+    else:
+        selected_data = all_data[int(ycenter-diameter_pix):int(ycenter+diameter_pix), int(xcenter-diameter_pix):int(xcenter+diameter_pix)]
+
+    normalized_data = (selected_data - selected_data.min() + 0.01) / (selected_data.max() - selected_data.min() + 0.01)
+    norm = colors.LogNorm(0.01, normalized_data.max())
+    image = plt.imshow(normalized_data, cmap=cm.gray, norm=norm, origin="lower",
+                       animated=True)
+
+    return image
+
+
+def make_movie(region_str, region, directory, multiply, visits):
+
+    fig = plt.figure()
+
+    print("Making animation...")
+
+    images = []
+
+    for visit in visits:
+        images.append([make_image(region_str, multiply, visit)])
+
+    ani = animation.ArtistAnimation(fig, images, interval=500, blit=True, repeat_delay=1000)
+    plt.show()
+    ani.save('%s/%s.mp4' % (directory, region))
+
+
+def examine_transient_candidates(database, block_edges_file, multiply, visits, selected_filter):
 
     db = DataDatabase("%s.db" % database, first=False)
 
@@ -91,9 +142,24 @@ def examine_transient_candidates(database, block_edges_file):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-    # Make a new DS9 region file for each individual transient candidate region
-    write_ds9_region_files(reg_ids, db, directory)
+    df_regions = db.db.get_table_as_dataframe('reg_dataframe')
 
-    make_lightcurves(reg_ids, block_edges, db, directory)
+    df_fluxes = db.db.get_table_as_dataframe('fluxes')
+    df_errors = db.db.get_table_as_dataframe('fluxes_errors')
+
+    # Get the dataframe that corresponds with the region
+    df_cond = db.db.get_table_as_dataframe('cond_table')
+    times = df_cond['date (modified Julian)']
+
+    visits, obsids = db.find_visits_files(visits, selected_filter)
+
+    print("Looping through transient candidates...\n")
+    for i, region in enumerate(reg_ids):
+        # Make a new DS9 region file for each individual transient candidate region
+        region_str = write_ds9_region_file(region, df_regions, directory)
+
+        make_lightcurve(region, block_edges[i], df_fluxes, df_errors, df_cond, times, directory)
+
+        make_movie(region_str, region, directory, multiply, visits)
 
     db.close()

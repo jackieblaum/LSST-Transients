@@ -148,7 +148,7 @@ class CircularRegion(object):
                 self._fix_point(corner4, data_shape)]
 
     def compute_mask(self, data_array):
- 
+
         nx, ny = data_array.shape
 
         # We need to start at 1 because ds9 regions follow the FORTRAN convention (arrays start at 1)
