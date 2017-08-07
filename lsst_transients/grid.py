@@ -1,19 +1,85 @@
 import astropy.units as u
 import numpy as np
+import pandas as pd
 from astropy.coordinates.angle_utilities import angular_separation
 
 from circular_region import CircularRegion
 from utils.cartesian_product import cartesian_product
 from utils.pix2world import pix2world
 
+GRID_FRAME_NAME = 'regions'
+
 
 class Grid(object):
+
+    def __init__(self, region_ids, centers_ra, centers_dec, radiuses, df=None):
+
+        if df is None:
+
+            # Normal construction
+
+            self._df = pd.DataFrame(columns=['ra', 'dec', 'radius'], index=region_ids)
+
+            self._df['ra'] = centers_ra
+            self._df['dec'] = centers_dec
+            self._df['radius'] = radiuses
+
+        else:
+
+            # Used by from_hdf
+
+            self._df = df
+
+    @classmethod
+    def read_from(cls, filename):
+
+        df = pd.read_hdf(filename, GRID_FRAME_NAME)
+
+        return cls(None, None, None, None, df=df)
+
+    def write_to(self, filename):
+
+        self._df.to_hdf(filename, GRID_FRAME_NAME, format='table')
+
+    @property
+    def n_regions(self):
+
+        return self._df.shape[0]
+
+    @property
+    def centers_ra(self):
+        return self._df['ra']
+
+    @property
+    def centers_dec(self):
+        return self._df['dec']
+
+    @property
+    def radiuses(self):
+        return self._df['radius']
+
+    @property
+    def region_ids(self):
+        return self._df.index
+
+    def __getitem__(self, region_id):
+
+        return self._df.loc[region_id]
+
+    def get_ds9_region(self, region_id):
+
+        region = self[region_id]
+
+        return 'circle(%s,%s,%s")' % (region['ra'], region['dec'], region['radius'])
+
+
+class GridFactory(object):
     '''
     A Grid object contains overlapping circular or square regions that can overlay an image. The regions can be stored
     in a .reg file and in a _database.
     '''
 
-    def __init__(self, xmin, xmax, ymin, ymax, overlapfactor, d, shape):
+    def __init__(self, xmin, xmax, ymin, ymax, overlapfactor, d):
         '''
         Constructs a grid object. A region list is instantiated, and the _overlap length is set to be the product of the
         _overlap factor and diameter/side length.
@@ -26,7 +92,6 @@ class Grid(object):
         :param ymax: The maximum y-coordinate of the image
         :param overlapfactor: The fraction of the length of the region by which the regions _overlap one another on the grid
         :param d: The length of the sides or diameter of the regions in the grid
-        :param shape: The _shape of the regions; either circle or square
         '''
 
         self._xmin = xmin
@@ -45,7 +110,8 @@ class Grid(object):
         self._d = d
         self._overlap = overlapfactor * d
 
-        self._shape = shape
+        self._regions_wcs = None
+        self._angular_distance_arcsec = None
 
     def _in_range(self, a_region):
         '''
@@ -186,4 +252,14 @@ class Grid(object):
 
         angular_distance_arcsec = angular_distance.to("arcsec").value
 
-        return regions_wcs, angular_distance_arcsec
+        ras = np.zeros(len(regions))
+        decs = np.zeros(len(regions))
+        ids = []
+
+        for i, (ra, dec) in enumerate(regions_wcs):
+
+            ras[i] = ra
+            decs[i] = dec
+            ids.append("reg%i" % i)
+
+        return Grid(ids, ras, decs, [angular_distance_arcsec] * len(ras))
