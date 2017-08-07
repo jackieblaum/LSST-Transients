@@ -14,7 +14,8 @@ if __name__ == "__main__":
                                                            'size of the regions', required=False, default=10)
     parser.add_argument('-v', '--visits', type=str, help='Name of the directory storing the visit files', required=True)
     parser.add_argument('-b', '--filter', type=str, help='Name of the filter to analyze (r, u, v...)', required=True)
+    parser.add_argument('-r', '--regid', type=str, help='Region ID of the region to be examined (ie. reg1)', required=True)
 
     args = parser.parse_args()
 
-    examine_transient_candidates(args.name, '%s.yml' % args.file, args.multiply, args.visits, args.filter)
+    examine_transient_candidates(args.name, args.regid,'%s.yml' % args.file, args.multiply, args.visits, args.filter)
