@@ -1,3 +1,4 @@
+import json
 import yaml
 import re
 import os
@@ -12,12 +13,12 @@ from astropy.io import fits as pyfits
 from data_database import DataDatabase
 from circular_region import CircularRegion
 
-def get_regs_and_blk_edges(yaml_file):
+def get_regs_and_blk_edges(json_file):
 
     reg_ids = []
     block_edges = []
 
-    with open(yaml_file, "r+") as f:
+    with open(json_file, "r+") as f:
         file_contents = yaml.load(f)
 
         # Iterate over the dictionary with region IDs as keys and block edge arrays as values
@@ -33,7 +34,7 @@ def write_ds9_region_file(region, df, directory):
     '''
     Writes all transient candidate regions to their own DS9 region files.
 
-    :param reg_ids: The IDs of the transient candidate regions as found in the yaml file (ie. reg1)
+    :param reg_ids: The IDs of the transient candidate regions as found in the json file (ie. reg1)
     :param db: The name of the _database
     :return: None
     '''
@@ -79,12 +80,12 @@ def make_image(region_str, multiply, visit):
         header = f[1].header
 
     w = wcs.WCS(header)
+    maxi = all_data.shape[0]
+    maxj = all_data.shape[1]
 
     reg = CircularRegion.from_ds9_region(w, region_str)
     xcenter = reg.x
     ycenter = reg.y
-
-    # Convert the diameter of the region to pixel coordinates
     diameter_pix = reg.d
 
     # Calculate the starting and ending coordinates that we want from the FITS file
@@ -100,7 +101,11 @@ def make_image(region_str, multiply, visit):
     iend = int(yend)
     jend = int(xend)
 
-    selected_data = all_data[istart:iend, jstart:jend]
+    if istart > 0 and jstart > 0 and iend <= maxi and jend <= maxj:
+        selected_data = all_data[istart:iend, jstart:jend]
+    else:
+        selected_data = all_data[int(ycenter-diameter_pix):int(ycenter+diameter_pix), int(xcenter-diameter_pix):int(xcenter+diameter_pix)]
+
     normalized_data = (selected_data - selected_data.min() + 0.01) / (selected_data.max() - selected_data.min() + 0.01)
     norm = colors.LogNorm(0.01, normalized_data.max())
     image = plt.imshow(normalized_data, cmap=cm.gray, norm=norm, origin="lower",
@@ -113,14 +118,16 @@ def make_movie(region_str, region, directory, multiply, visits):
 
     fig = plt.figure()
 
+    print("Making animation...")
+
     images = []
 
     for visit in visits:
-        images.append(make_image(region_str, multiply, visit))
+        images.append([make_image(region_str, multiply, visit)])
 
-    ani = animation.FuncAnimation(fig, images, interval=50, blit=True, repeat_delay=1000)
-    ani.save('%s/%s.mp4' % (directory, region))
+    ani = animation.ArtistAnimation(fig, images, interval=500, blit=True, repeat_delay=1000)
     plt.show()
+    ani.save('%s/%s.mp4' % (directory, region))
 
 
 def examine_transient_candidates(database, block_edges_file, multiply, visits, selected_filter):
@@ -146,6 +153,7 @@ def examine_transient_candidates(database, block_edges_file, multiply, visits, s
 
     visits, obsids = db.find_visits_files(visits, selected_filter)
 
+    print("Looping through transient candidates...\n")
     for i, region in enumerate(reg_ids):
         # Make a new DS9 region file for each individual transient candidate region
         region_str = write_ds9_region_file(region, df_regions, directory)
