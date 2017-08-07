@@ -2,32 +2,36 @@ import json
 import yaml
 import re
 import os
+import pyregion
+
+import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.image as mpimg
 import numpy as np
 import matplotlib.animation as animation
 
 from matplotlib import colors, cm, pyplot as plt
 from astropy import wcs
+from astropy.nddata.utils import Cutout2D
+from astropy import units as u
 
 from astropy.io import fits as pyfits
 from data_database import DataDatabase
 from circular_region import CircularRegion
 
-def get_regs_and_blk_edges(json_file):
-
-    reg_ids = []
-    block_edges = []
+def get_blk_edges(regid, json_file):
 
     with open(json_file, "r+") as f:
         file_contents = yaml.load(f)
 
         # Iterate over the dictionary with region IDs as keys and block edge arrays as values
         for key, value in file_contents.items():
+            if key == regid:
+                block_edges = value
+                return block_edges
 
-            reg_ids.append(key)
-            block_edges.append(value)
-
-    return reg_ids, block_edges
+    return None
 
 
 def write_ds9_region_file(region, df, directory):
@@ -72,7 +76,7 @@ def make_lightcurve(region, block_edges, df_fluxes, df_errors, cond, times, dire
     plt.savefig("%s/%s.png" % (directory, region))
 
 
-def make_image(region_str, multiply, visit):
+def make_image(center, size, visit):
 
     # Get needed info from FITS file
     with pyfits.open(visit) as f:
@@ -80,41 +84,23 @@ def make_image(region_str, multiply, visit):
         header = f[1].header
 
     w = wcs.WCS(header)
-    maxi = all_data.shape[0]
-    maxj = all_data.shape[1]
 
-    reg = CircularRegion.from_ds9_region(w, region_str)
-    xcenter = reg.x
-    ycenter = reg.y
-    diameter_pix = reg.d
+    #filt = region.as_imagecoord(header).get_filter()
+    #mask = filt.mask(all_data)
+    selected_data = Cutout2D(all_data, center, size, wcs=w)
 
-    # Calculate the starting and ending coordinates that we want from the FITS file
-    xstart = xcenter - (diameter_pix * multiply)
-    ystart = ycenter - (diameter_pix * multiply)
+    normalized_data = (selected_data.data - selected_data.data.min() + 0.1) / (selected_data.data.max() - selected_data.data.min() + 0.1)
+    norm = colors.LogNorm(normalized_data.min(), normalized_data.max())
+    fig = plt.figure()
+    sub = fig.add_subplot(111, projection=w)
 
-    istart = int(ystart)
-    jstart = int(xstart)
-
-    xend = xcenter + (diameter_pix * multiply)
-    yend = ycenter + (diameter_pix * multiply)
-
-    iend = int(yend)
-    jend = int(xend)
-
-    if istart > 0 and jstart > 0 and iend <= maxi and jend <= maxj:
-        selected_data = all_data[istart:iend, jstart:jend]
-    else:
-        selected_data = all_data[int(ycenter-diameter_pix):int(ycenter+diameter_pix), int(xcenter-diameter_pix):int(xcenter+diameter_pix)]
-
-    normalized_data = (selected_data - selected_data.min() + 0.01) / (selected_data.max() - selected_data.min() + 0.01)
-    norm = colors.LogNorm(0.01, normalized_data.max())
-    image = plt.imshow(normalized_data, cmap=cm.gray, norm=norm, origin="lower",
+    image = sub.imshow(normalized_data, cmap=cm.gray, norm=norm, origin="lower",
                        animated=True)
 
-    return image
+    return fig, sub, image
 
 
-def make_movie(region_str, region, directory, multiply, visits):
+def make_movie(region_str, region_name, directory, multiply, visits):
 
     fig = plt.figure()
 
@@ -122,20 +108,31 @@ def make_movie(region_str, region, directory, multiply, visits):
 
     images = []
 
+    # Change the region to a square
+    split = re.split("[, (\")]+", region_str)
+    ra = float(split[1])
+    dec = float(split[2])
+    side = float(split[3])*2*multiply
+    size = u.Quantity((side, side), u.arcsec)
+    center = (ra,dec)
+
     for visit in visits:
-        images.append([make_image(region_str, multiply, visit)])
+        this_figure, _, image = make_image(center, size, visit)
+        if image:
+            images.append([image])
+            #plt.close(this_figure)
 
     ani = animation.ArtistAnimation(fig, images, interval=500, blit=True, repeat_delay=1000)
-    plt.show()
-    ani.save('%s/%s.mp4' % (directory, region))
+
+    ani.save('%s/%s.mp4' % (directory, region_name))
 
 
-def examine_transient_candidates(database, block_edges_file, multiply, visits, selected_filter):
+def examine_transient_candidates(database, regid, block_edges_file, multiply, visits, selected_filter):
 
     db = DataDatabase("%s.db" % database, first=False)
 
-    # Get the region IDs and corresponding block edges of transient candidates from the block edges file
-    reg_ids, block_edges = get_regs_and_blk_edges(block_edges_file)
+    # Get the corresponding block edges of the specified transient candidate
+    block_edges = get_blk_edges(regid, block_edges_file)
 
     # Make a directory to store the region files and lightcurves
     directory = 'transient_candidates'
@@ -153,13 +150,11 @@ def examine_transient_candidates(database, block_edges_file, multiply, visits, s
 
     visits, obsids = db.find_visits_files(visits, selected_filter)
 
-    print("Looping through transient candidates...\n")
-    for i, region in enumerate(reg_ids):
-        # Make a new DS9 region file for each individual transient candidate region
-        region_str = write_ds9_region_file(region, df_regions, directory)
+    # Make a new DS9 region file
+    region_str = write_ds9_region_file(str(regid), df_regions, directory)
 
-        make_lightcurve(region, block_edges[i], df_fluxes, df_errors, df_cond, times, directory)
+    make_lightcurve(str(regid), block_edges, df_fluxes, df_errors, df_cond, times, directory)
 
-        make_movie(region_str, region, directory, multiply, visits)
+    make_movie(region_str, str(regid), directory, multiply, visits)
 
     db.close()
