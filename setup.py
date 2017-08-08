@@ -27,8 +27,8 @@ setup(
                       'scipy',
                       'astropy',
                       'pandas',
-                      'SQLAlchemy',
-                      'Pillow'],
+                      'photutils',
+                      'imageio'],
 
     scripts=scripts,
 
