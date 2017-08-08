@@ -1,135 +1,195 @@
 import json
-import yaml
 import re
 import os
-import pyregion
+import numpy as np
+import shutil
+import multiprocessing
+import functools
 
 import matplotlib
 matplotlib.use("Agg")
 
-import matplotlib.image as mpimg
-import numpy as np
-import matplotlib.animation as animation
+import reproject
+
+import imageio
 
 from matplotlib import colors, cm, pyplot as plt
+from matplotlib.patches import Circle
 from astropy import wcs
+from astropy.coordinates import SkyCoord
 from astropy.nddata.utils import Cutout2D
 from astropy import units as u
 
 from astropy.io import fits as pyfits
 from data_database import DataDatabase
-from circular_region import CircularRegion
+from aperture_photometry import find_visits_files
+from utils.logging_system import get_logger
+from utils.loop_with_progress import loop_with_progress
+
+log = get_logger(__name__)
 
 def get_blk_edges(regid, json_file):
 
     with open(json_file, "r+") as f:
-        file_contents = yaml.load(f)
 
-        # Iterate over the dictionary with region IDs as keys and block edge arrays as values
-        for key, value in file_contents.items():
-            if key == regid:
-                block_edges = value
-                return block_edges
+        file_contents = json.load(f)
 
-    return None
+    # Iterate over the dictionary with region IDs as keys and block edge arrays as values
+    return file_contents[regid]
 
 
-def write_ds9_region_file(region, df, directory):
-    '''
-    Writes all transient candidate regions to their own DS9 region files.
-
-    :param reg_ids: The IDs of the transient candidate regions as found in the json file (ie. reg1)
-    :param db: The name of the _database
-    :return: None
-    '''
-
-    reg_index = int(re.compile(r'(\d+)$').search(region).group(1))+1
-
-    # Get the DS9 region string from the database and write it to a new region file
-    with open('%s/%s.reg' % (directory, region), "w+") as f:
-
-        ds9_string = df['ds9_info'][reg_index]
-
-        f.write('icrs\n%s' % ds9_string)
-
-    return ds9_string
+def make_lightcurve(region_id, block_dict, df_fluxes, df_errors, cond, times, directory):
 
 
-def make_lightcurve(region, block_edges, df_fluxes, df_errors, cond, times, directory):
-
-
-    reg_database_index = re.compile(r'(\d+)$').search(region).group(1)
+    #reg_database_index = re.compile(r'(\d+)$').search(region_id).group(1)
 
     # Plot and save
 
     plt.xlabel('Time (MJD)')
     plt.ylabel('Flux')
 
-    plt.errorbar(times, df_fluxes.iloc[int(reg_database_index)].values,
-                 yerr=list(df_errors.iloc[int(reg_database_index)].values), fmt='.')
-    plt.title('Region %s Lightcurve' % reg_database_index)
+    plt.errorbar(times, df_fluxes.loc[region_id].values,
+                 yerr=list(df_errors.loc[region_id].values), fmt='.')
+    plt.title('Region %s Lightcurve' % region_id)
 
-    for j in range(len(block_edges)):
-        edge_lines = plt.axvline(block_edges[j], linestyle='--')
-        plt.setp(edge_lines, color='r', linewidth=2.0)
+    edges = block_dict['tstart']
+    edges.append(block_dict['tstop'][-1])
 
-    plt.savefig("%s/%s.png" % (directory, region))
+    for j in range(len(edges)):
+
+        plt.axvline(edges[j], linestyle='--', color='r', lw=2.0)
+
+    plt.ylim([0, np.nanmax(df_fluxes.loc[region_id].values)])
+
+    plt.savefig("%s/%s.png" % (directory, region_id))
 
 
-def make_image(center, size, visit):
+def make_image(center, size, visit, original_wcs):
 
-    # Get needed info from FITS file
+    # Reproject new image onto WCS from original image
+
     with pyfits.open(visit) as f:
-        all_data = f[1].data
-        header = f[1].header
+        
+        # Compute background level
+        original_image = f[3].data
+        mask_data = f[2].data
+        mask = (np.array(mask_data) == 0)
 
-    w = wcs.WCS(header)
+        bkgd_level = np.median(original_image[mask])
 
-    #filt = region.as_imagecoord(header).get_filter()
-    #mask = filt.mask(all_data)
-    selected_data = Cutout2D(all_data, center, size, wcs=w)
+        this_hdu = f[3]
 
-    normalized_data = (selected_data.data - selected_data.data.min() + 0.1) / (selected_data.data.max() - selected_data.data.min() + 0.1)
-    norm = colors.LogNorm(normalized_data.min(), normalized_data.max())
+        this_w = wcs.WCS(this_hdu.header)
+
+        selected_data = Cutout2D(this_hdu.data, center, size, wcs=this_w)
+
+    # Reproject into the original WCS
+    reprojected_data, _ = reproject.reproject_interp((selected_data.data, selected_data.wcs), original_wcs,
+                                                     shape_out=selected_data.shape)
+
+    return reprojected_data, bkgd_level, original_wcs
+
+
+def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, wcs):
+
+    norm = colors.LogNorm(bkg_level, bkg_level + np.sqrt(bkg_level) * 7)
+
+    idx = np.isnan(reprojected_data)
+    reprojected_data[idx] = bkg_level
+
     fig = plt.figure()
-    sub = fig.add_subplot(111, projection=w)
+    sub = fig.add_subplot(111, projection=wcs)
 
-    image = sub.imshow(normalized_data, cmap=cm.gray, norm=norm, origin="lower",
-                       animated=True)
+    sub.imshow(reprojected_data, norm=norm, origin="lower", cmap='jet')
 
-    return fig, sub, image
+    c = Circle((ra, dec), radius, edgecolor='white', facecolor='none',
+               transform=sub.get_transform('fk5'), linewidth=2.0)
+    sub.add_patch(c)
+
+    fig.savefig(filename)
+
+    plt.close(fig)
+
+
+def worker(args, center, size, wcs, temp_dir, ra, dec, radius):
+
+    i, visit = args
+
+    this_data, bkg_level, this_w = make_image(center, size, visit, wcs)
+
+    this_filename = os.path.join(temp_dir, "frame%010i.png" % i)
+
+    make_plot(this_data, bkg_level, this_filename, ra, dec, radius, this_w)
+
+    return this_filename
 
 
 def make_movie(region_str, region_name, directory, multiply, visits):
-
-    fig = plt.figure()
-
-    print("Making animation...")
-
-    images = []
 
     # Change the region to a square
     split = re.split("[, (\")]+", region_str)
     ra = float(split[1])
     dec = float(split[2])
-    side = float(split[3])*2*multiply
+    radius = float(split[3])
+    side = radius*2*multiply
     size = u.Quantity((side, side), u.arcsec)
-    center = (ra,dec)
+    center = SkyCoord(ra=ra, dec=dec, frame='fk5', unit='deg')
 
-    for visit in visits:
-        this_figure, _, image = make_image(center, size, visit)
-        if image:
-            images.append([image])
-            #plt.close(this_figure)
+    log.info("Generating animation...")
 
-    ani = animation.ArtistAnimation(fig, images, interval=500, blit=True, repeat_delay=1000)
+    # Get WCS from first visit
+    with pyfits.open(visits[0]) as f:
 
-    ani.save('%s/%s.mp4' % (directory, region_name))
+        original_header = f[1].header
+        original_data = f[1].data
+        original_wcs = wcs.WCS(original_header)
+
+    selected_data = Cutout2D(original_data, center, size, wcs=original_wcs)
+
+    temp_dir = "__frame__"
+
+    try:
+
+        shutil.rmtree(temp_dir)
+
+    except:
+
+        pass
+
+    os.makedirs(temp_dir)
+
+    pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
+
+    worker_partial = functools.partial(worker,
+                                       center=center, size=size, wcs=selected_data.wcs, temp_dir=temp_dir,
+                                       ra=ra, dec=dec, radius=(radius * u.arcsec).to(u.deg).value)
+
+    with imageio.get_writer("%s.gif" % region_name, mode='I', duration=0.3) as writer:
+
+        try:
 
 
-def examine_transient_candidates(database, regid, block_edges_file, multiply, visits, selected_filter):
 
-    db = DataDatabase("%s.db" % database, first=False)
+            for this_filename in loop_with_progress(pool.imap(worker_partial, zip(range(len(visits)), visits)),
+                                                    len(visits), 10, log.info):
+
+                image = imageio.imread(this_filename)
+                writer.append_data(image)
+
+        except:
+
+            raise
+
+        finally:
+
+            pool.close()
+
+    #shutil.rmtree(temp_dir)
+
+    log.info("done")
+
+
+def examine_transient_candidates(database, grid, regid, block_edges_file, multiply, visits, selected_filter):
 
     # Get the corresponding block edges of the specified transient candidate
     block_edges = get_blk_edges(regid, block_edges_file)
@@ -139,22 +199,23 @@ def examine_transient_candidates(database, regid, block_edges_file, multiply, vi
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-    df_regions = db.db.get_table_as_dataframe('reg_dataframe')
+    with DataDatabase("%s" % database) as db:
 
-    df_fluxes = db.db.get_table_as_dataframe('fluxes')
-    df_errors = db.db.get_table_as_dataframe('fluxes_errors')
+        df_fluxes = db.db.get_table_as_dataframe('fluxes')
+        df_errors = db.db.get_table_as_dataframe('fluxes_errors')
 
-    # Get the dataframe that corresponds with the region
-    df_cond = db.db.get_table_as_dataframe('cond_table')
+        # Get the dataframe that corresponds with the region
+        df_cond = db.db.get_table_as_dataframe('cond_table')
+
     times = df_cond['date (modified Julian)']
 
-    visits, obsids = db.find_visits_files(visits, selected_filter)
+    visits, obsids = find_visits_files(visits, selected_filter)
 
     # Make a new DS9 region file
-    region_str = write_ds9_region_file(str(regid), df_regions, directory)
+    #region_str = write_ds9_region_file(str(regid), grid, directory)
+
+    region_str = grid.get_ds9_region(regid)
 
     make_lightcurve(str(regid), block_edges, df_fluxes, df_errors, df_cond, times, directory)
 
     make_movie(region_str, str(regid), directory, multiply, visits)
-
-    db.close()
