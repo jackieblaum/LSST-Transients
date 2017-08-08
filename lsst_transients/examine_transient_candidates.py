@@ -92,10 +92,12 @@ def reproject_onto_original_wcs(center, size, visit, original_wcs):
 
 def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, wcs):
 
-    norm = colors.LogNorm(1, 10000)
+    sigma_min = 0.5
+
+    norm = colors.LogNorm(sigma_min * np.sqrt(bkg_level), 10000)
 
     idx = np.isnan(reprojected_data)
-    reprojected_data[idx] = bkg_level
+    reprojected_data[idx] = sigma_min * np.sqrt(bkg_level)
 
     fig = plt.figure()
     sub = fig.add_subplot(111, projection=wcs)
