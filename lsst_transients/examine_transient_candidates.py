@@ -94,7 +94,7 @@ def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, wcs):
 
     sigma_min = 0.5
 
-    norm = colors.LogNorm(sigma_min * np.sqrt(bkg_level), 10000)
+    norm = colors.LogNorm(sigma_min * np.sqrt(bkg_level), 5000)
 
     idx = np.isnan(reprojected_data)
     reprojected_data[idx] = sigma_min * np.sqrt(bkg_level)
