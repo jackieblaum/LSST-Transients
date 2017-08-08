@@ -1,15 +1,9 @@
 import pandas as pd
-import numpy as np
 import os
-import photutils
-import ctypes
 
-import astropy.io.fits as pyfits
-from astropy import wcs
 
 from utils import database_io
 from utils.logging_system import get_logger
-from utils.loop_with_progress import loop_with_progress
 from aperture_photometry import bulk_aperture_photometry
 
 log = get_logger(os.path.basename(__file__))
