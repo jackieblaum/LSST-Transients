@@ -64,7 +64,7 @@ def make_lightcurve(region_id, block_dict, df_fluxes, df_errors, cond, times, di
     plt.savefig("%s/%s.png" % (directory, region_id))
 
 
-def make_image(center, size, visit, original_wcs):
+def reproject_onto_original_wcs(center, size, visit, original_wcs):
 
     # Reproject new image onto WCS from original image
 
@@ -77,7 +77,7 @@ def make_image(center, size, visit, original_wcs):
 
         bkgd_level = np.median(original_image[mask])
 
-        this_hdu = f[3]
+        this_hdu = f[1]
 
         this_w = wcs.WCS(this_hdu.header)
 
@@ -92,7 +92,7 @@ def make_image(center, size, visit, original_wcs):
 
 def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, wcs):
 
-    norm = colors.LogNorm(bkg_level, bkg_level + np.sqrt(bkg_level) * 10)
+    norm = colors.LogNorm(1, 10000)
 
     idx = np.isnan(reprojected_data)
     reprojected_data[idx] = bkg_level
@@ -116,7 +116,7 @@ def worker(args, center, size, wcs, temp_dir, ra, dec, radius):
 
     i, visit = args
 
-    this_data, bkg_level, this_w = make_image(center, size, visit, wcs)
+    this_data, bkg_level, this_w = reproject_onto_original_wcs(center, size, visit, wcs)
 
     this_filename = os.path.join(temp_dir, "frame%010i.png" % i)
 
