@@ -107,7 +107,7 @@ def _get_apertures(grid):
     return apertures
 
 
-def _find_visits_files(path, selected_filter):
+def find_visits_files(path, selected_filter):
     """
     Finds all visits files and return them in a list ordered by observation time
 
@@ -171,7 +171,7 @@ def bulk_aperture_photometry(path, selected_filter, grid):
 
     log.info("Selecting visits...")
 
-    visits_sorted, obsid_sorted = _find_visits_files(path, selected_filter)
+    visits_sorted, obsid_sorted = find_visits_files(path, selected_filter)
 
     log.info("Found %i visits" % len(visits_sorted))
 
