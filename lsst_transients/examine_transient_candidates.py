@@ -224,4 +224,6 @@ def examine_transient_candidates(database, grid, regid, block_edges_file, multip
 
     max_flux = make_lightcurve(str(regid), block_edges, df_fluxes, df_errors, df_cond, times, directory)
 
+    log.info("Maximum net flux: %.3f" % max_flux)
+
     make_movie(region_str, str(regid), directory, multiply, visits, max_flux)
