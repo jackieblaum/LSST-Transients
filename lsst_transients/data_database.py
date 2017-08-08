@@ -70,7 +70,7 @@ class DataDatabase(object):
 
         return None
 
-    def fill_visits(self, path, selected_filter, grid):
+    def fill_visits(self, path, selected_filter, grid, ncpus=1):
         '''
         Fills the dataframes that are indexed by visits. It first fills the flux tables and then fills the conditions table.
 
@@ -81,7 +81,8 @@ class DataDatabase(object):
         :return None
         '''
 
-        df, df_errors, headers_prim, obsid_sorted, n_failed = bulk_aperture_photometry(path, selected_filter, grid)
+        df, df_errors, headers_prim, obsid_sorted, n_failed = bulk_aperture_photometry(path, selected_filter,
+                                                                                       grid, ncpus)
 
         # Conditions are seeing, date, and so on, for each visit
 

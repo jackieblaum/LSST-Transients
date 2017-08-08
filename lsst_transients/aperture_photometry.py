@@ -158,7 +158,7 @@ def find_visits_files(path, selected_filter):
     return visits_sorted, obsid_sorted
 
 
-def bulk_aperture_photometry(path, selected_filter, grid):
+def bulk_aperture_photometry(path, selected_filter, grid, ncpus):
     '''
     Fills the dataframes that are indexed by visits. It first fills the flux tables and then fills the conditions table.
 
@@ -190,7 +190,7 @@ def bulk_aperture_photometry(path, selected_filter, grid):
 
     n_failed = 0
 
-    pool = multiprocessing.Pool(processes=4,
+    pool = multiprocessing.Pool(processes=ncpus,
                                 initializer=process_setup,
                                 initargs=[all_apertures])
 
