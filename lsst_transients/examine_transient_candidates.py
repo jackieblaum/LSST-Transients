@@ -63,6 +63,8 @@ def make_lightcurve(region_id, block_dict, df_fluxes, df_errors, cond, times, di
 
     plt.savefig("%s/%s.png" % (directory, region_id))
 
+    return np.nanmax(df_fluxes.loc[region_id].values)
+
 
 def reproject_onto_original_wcs(center, size, visit, original_wcs):
 
@@ -90,17 +92,15 @@ def reproject_onto_original_wcs(center, size, visit, original_wcs):
     return reprojected_data, bkgd_level, original_wcs
 
 
-def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, wcs):
+def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, orig_wcs, max_flux):
 
-    sigma_min = 0.5
-
-    norm = colors.LogNorm(sigma_min * np.sqrt(bkg_level), 5000)
+    norm = colors.LogNorm(1, max_flux)
 
     idx = np.isnan(reprojected_data)
-    reprojected_data[idx] = sigma_min * np.sqrt(bkg_level)
+    reprojected_data[idx] = 1
 
     fig = plt.figure()
-    sub = fig.add_subplot(111, projection=wcs)
+    sub = fig.add_subplot(111, projection=orig_wcs)
 
     sub.imshow(reprojected_data, norm=norm, origin="lower", cmap='jet', interpolation='bilinear')
 
@@ -114,7 +114,7 @@ def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, wcs):
     plt.close(fig)
 
 
-def worker(args, center, size, wcs, temp_dir, ra, dec, radius):
+def worker(args, center, size, wcs, temp_dir, ra, dec, radius, max_flux):
 
     i, visit = args
 
@@ -122,12 +122,12 @@ def worker(args, center, size, wcs, temp_dir, ra, dec, radius):
 
     this_filename = os.path.join(temp_dir, "frame%010i.png" % i)
 
-    make_plot(this_data, bkg_level, this_filename, ra, dec, radius, this_w)
+    make_plot(this_data, bkg_level, this_filename, ra, dec, radius, this_w, max_flux)
 
     return this_filename
 
 
-def make_movie(region_str, region_name, directory, multiply, visits):
+def make_movie(region_str, region_name, directory, multiply, visits, max_flux):
 
     # Change the region to a square
     split = re.split("[, (\")]+", region_str)
@@ -165,7 +165,8 @@ def make_movie(region_str, region_name, directory, multiply, visits):
 
     worker_partial = functools.partial(worker,
                                        center=center, size=size, wcs=selected_data.wcs, temp_dir=temp_dir,
-                                       ra=ra, dec=dec, radius=(radius * u.arcsec).to(u.deg).value)
+                                       ra=ra, dec=dec, radius=(radius * u.arcsec).to(u.deg).value,
+                                       max_flux=max_flux)
 
     with imageio.get_writer(os.path.join(directory, "%s.gif" % region_name), mode='I', duration=0.3) as writer:
 
@@ -221,6 +222,6 @@ def examine_transient_candidates(database, grid, regid, block_edges_file, multip
 
     region_str = grid.get_ds9_region(regid)
 
-    make_lightcurve(str(regid), block_edges, df_fluxes, df_errors, df_cond, times, directory)
+    max_flux = make_lightcurve(str(regid), block_edges, df_fluxes, df_errors, df_cond, times, directory)
 
-    make_movie(region_str, str(regid), directory, multiply, visits)
+    make_movie(region_str, str(regid), directory, multiply, visits, max_flux)
