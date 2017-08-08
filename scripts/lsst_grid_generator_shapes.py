@@ -62,7 +62,7 @@ if __name__ == "__main__":
     grid = grid_factory.get_grid(input_example)
 
     log.info("Generated %i regions" % grid.n_regions)
-    log.info("Side length of regions in pixels/arcsec: %.2f/ %.2f" % (args.diameter, grid["reg0"]['radius']))
+    log.info("Side length of regions in pixels/arcsec: %.2f/ %.2f" % (args.diameter, 2 * grid["reg0"]['radius']))
     log.info("Overlap (fraction of region): %.2f" % args.fraction)
 
     grid.write_to(grid_file)
