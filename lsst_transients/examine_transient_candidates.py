@@ -164,7 +164,7 @@ def make_movie(region_str, region_name, directory, multiply, visits):
                                        center=center, size=size, wcs=selected_data.wcs, temp_dir=temp_dir,
                                        ra=ra, dec=dec, radius=(radius * u.arcsec).to(u.deg).value)
 
-    with imageio.get_writer("%s.gif" % region_name, mode='I', duration=0.3) as writer:
+    with imageio.get_writer(os.path.join(directory, "%s.gif" % region_name), mode='I', duration=0.3) as writer:
 
         try:
 
@@ -184,7 +184,7 @@ def make_movie(region_str, region_name, directory, multiply, visits):
 
             pool.close()
 
-    #shutil.rmtree(temp_dir)
+    shutil.rmtree(temp_dir)
 
     log.info("done")
 
@@ -196,7 +196,9 @@ def examine_transient_candidates(database, grid, regid, block_edges_file, multip
 
     # Make a directory to store the region files and lightcurves
     directory = 'transient_candidates'
+
     if not os.path.exists(directory):
+
         os.makedirs(directory)
 
     with DataDatabase("%s" % database) as db:
