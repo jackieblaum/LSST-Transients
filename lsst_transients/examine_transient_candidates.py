@@ -79,7 +79,7 @@ def reproject_onto_original_wcs(center, size, visit, original_wcs):
 
         bkgd_level = np.median(original_image[mask])
 
-        this_hdu = f[1]
+        this_hdu = f[3]
 
         this_w = wcs.WCS(this_hdu.header)
 
@@ -94,10 +94,10 @@ def reproject_onto_original_wcs(center, size, visit, original_wcs):
 
 def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, orig_wcs, max_flux):
 
-    norm = colors.LogNorm(1, max_flux)
+    norm = colors.LogNorm(bkg_level, max_flux + bkg_level)
 
     idx = np.isnan(reprojected_data)
-    reprojected_data[idx] = 1
+    reprojected_data[idx] = bkg_level
 
     fig = plt.figure()
     sub = fig.add_subplot(111, projection=orig_wcs)
