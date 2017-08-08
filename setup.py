@@ -29,7 +29,8 @@ setup(
                       'pandas',
                       'photutils',
                       'imageio',
-                      'pyregion'],
+                      'pyregion',
+                      'matplotlib'],
 
     scripts=scripts,
 
