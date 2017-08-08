@@ -92,7 +92,7 @@ def make_image(center, size, visit, original_wcs):
 
 def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, wcs):
 
-    norm = colors.LogNorm(bkg_level, bkg_level + np.sqrt(bkg_level) * 7)
+    norm = colors.LogNorm(bkg_level, bkg_level + np.sqrt(bkg_level) * 10)
 
     idx = np.isnan(reprojected_data)
     reprojected_data[idx] = bkg_level
