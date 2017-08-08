@@ -28,7 +28,8 @@ setup(
                       'astropy',
                       'pandas',
                       'photutils',
-                      'imageio'],
+                      'imageio',
+                      'pyregion'],
 
     scripts=scripts,
 
