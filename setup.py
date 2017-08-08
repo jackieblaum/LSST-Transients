@@ -30,7 +30,8 @@ setup(
                       'photutils',
                       'imageio',
                       'pyregion',
-                      'matplotlib'],
+                      'matplotlib',
+                      'reproject'],
 
     scripts=scripts,
 
