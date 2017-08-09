@@ -21,6 +21,7 @@ from astropy.nddata.utils import Cutout2D
 from astropy import units as u
 
 from astropy.io import fits as pyfits
+from astropy.wcs.utils import proj_plane_pixel_scales
 from data_database import DataDatabase
 from aperture_photometry import find_visits_files
 from utils.logging_system import get_logger
@@ -94,7 +95,19 @@ def reproject_onto_original_wcs(center, size, visit, original_wcs):
 
 def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, orig_wcs, max_flux):
 
-    norm = colors.LogNorm(vmin=bkg_level, vmax=(max_flux + bkg_level))
+    # Circle area
+    pixel_scale = proj_plane_pixel_scales(orig_wcs)
+
+    # We take the geometric average of the pixel scales in the X and Y direction, as done
+    # in pyregion
+
+    pixel_scale_with_units = (pixel_scale[0] * pixel_scale[1]) ** 0.5 * u.Unit(orig_wcs.wcs.cunit[0])
+
+    pixel_scale_arcsec = pixel_scale_with_units.to("arcsec").value
+    radius_pixel = radius / pixel_scale_arcsec
+    area = np.pi * radius_pixel**2
+
+    norm = colors.LogNorm(vmin=bkg_level, vmax=(max_flux/area + bkg_level))
 
     idx = np.isnan(reprojected_data)
     reprojected_data[idx] = bkg_level
