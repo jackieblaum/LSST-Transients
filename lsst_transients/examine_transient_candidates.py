@@ -103,8 +103,8 @@ def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, orig_wcs, 
 
     pixel_scale_with_units = (pixel_scale[0] * pixel_scale[1]) ** 0.5 * u.Unit(orig_wcs.wcs.cunit[0])
 
-    pixel_scale_arcsec = pixel_scale_with_units.to("arcsec").value
-    radius_pixel = radius / pixel_scale_arcsec
+    pixel_scale_deg = pixel_scale_with_units.to("deg").value
+    radius_pixel = radius / pixel_scale_deg
     area = np.pi * radius_pixel**2
 
     norm = colors.LogNorm(vmin=bkg_level, vmax=(max_flux/area + bkg_level))
