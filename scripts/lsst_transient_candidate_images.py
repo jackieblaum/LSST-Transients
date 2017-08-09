@@ -13,7 +13,7 @@ if __name__ == "__main__":
     parser.add_argument('--grid', type=str, help='Database with the grid', required=True)
     parser.add_argument('-f', '--results', type=str, help='Name of the json file in which the blocks are stored',
                         required=True)
-    parser.add_argument('-m', '--multiply', type=int, help='Size of the images will be this many times the '
+    parser.add_argument('-m', '--multiply', type=float, help='Size of the images will be this many times the '
                                                            'size of the regions', required=False, default=2)
     parser.add_argument('-v', '--visits', type=str, help='Name of the directory storing the visit files', required=True)
     parser.add_argument('-b', '--filter', type=str, help='Name of the filter to analyze (r, u, v...)', required=True)
