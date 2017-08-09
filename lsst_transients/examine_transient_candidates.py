@@ -115,7 +115,7 @@ def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, orig_wcs, 
     fig = plt.figure()
     sub = fig.add_subplot(111, projection=orig_wcs)
 
-    sub.imshow(reprojected_data, norm=norm, origin="lower", cmap='jet', interpolation='gaussian', filterrad=1)
+    sub.imshow(reprojected_data, norm=norm, origin="lower", cmap='jet', interpolation='none')
 
     c = Circle((ra, dec), radius, edgecolor='white', facecolor='none',
                transform=sub.get_transform('fk5'), linewidth=2.0)
