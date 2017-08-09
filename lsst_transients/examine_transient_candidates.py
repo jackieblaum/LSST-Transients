@@ -94,7 +94,7 @@ def reproject_onto_original_wcs(center, size, visit, original_wcs):
 
 def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, orig_wcs, max_flux):
 
-    norm = colors.LogNorm(bkg_level, max_flux + bkg_level)
+    norm = colors.LogNorm(vmin=bkg_level, vmax=(max_flux + bkg_level))
 
     idx = np.isnan(reprojected_data)
     reprojected_data[idx] = bkg_level
