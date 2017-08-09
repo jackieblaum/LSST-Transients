@@ -107,7 +107,7 @@ def make_plot(reprojected_data, bkg_level, filename, ra, dec, radius, orig_wcs, 
     radius_pixel = radius / pixel_scale_deg
     area = np.pi * radius_pixel**2
 
-    norm = colors.LogNorm(vmin=bkg_level, vmax=(max_flux/area + bkg_level)*1.5)
+    norm = colors.LogNorm(vmin=bkg_level, vmax=(max_flux/area + bkg_level)*1.3)
 
     idx = np.isnan(reprojected_data)
     reprojected_data[idx] = bkg_level
