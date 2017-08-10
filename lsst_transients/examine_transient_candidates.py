@@ -75,7 +75,7 @@ def reproject_onto_original_wcs(center, size, visit, original_wcs):
 
         this_w = wcs.WCS(this_hdu.header)
 
-        selected_data = Cutout2D(this_hdu.data, center, size, wcs=this_w)
+        selected_data = Cutout2D(this_hdu.data, center, size, wcs=this_w, mode='partial')
 
         # Get the MJD
         mjd = f[0].header['MJD-OBS']
@@ -160,7 +160,7 @@ def make_movie(region_str, region_name, directory, multiply, visits, max_flux, b
         original_data = f[1].data
         original_wcs = wcs.WCS(original_header)
 
-    selected_data = Cutout2D(original_data, center, size, wcs=original_wcs)
+    selected_data = Cutout2D(original_data, center, size, wcs=original_wcs, mode='partial')
 
     temp_dir = "__frame__"
 
