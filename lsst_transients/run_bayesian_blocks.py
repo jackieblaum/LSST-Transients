@@ -88,7 +88,6 @@ def bayesian_blocks(t, x, sigma, p0):
     edges = np.concatenate([t[:1],
                             0.5 * (t[1:] + t[:-1]),
                             t[-1:]])
-    block_length = t[-1] - edges
 
     # arrays to store the best configuration
     N = len(t)
@@ -158,14 +157,14 @@ def bayesian_blocks(t, x, sigma, p0):
         tstart = final_blocks[i]
         tstop = final_blocks[i+1]
 
-        idx = (t >= tstart) & (t <= tstop)
+        idx = (t >= tstart) & (t < tstop)
 
         n = float(np.sum(idx))
 
         fluxes[i] = np.sum(x[idx]) / n
         errors[i] = np.sqrt(np.sum(sigma[idx]**2)) / n
 
-    return edges[change_points], fluxes, errors
+    return final_blocks, fluxes, errors
 
 
 class BayesianBlocks(object):
