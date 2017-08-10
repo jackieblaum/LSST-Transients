@@ -230,7 +230,7 @@ def make_movie(region_str, region_name, directory, multiply, visits, max_flux, b
             this_coadd = frames[elements[0]]
             this_bkg_level = bkg_levels[elements[0]]
 
-            for el in elements[1:-1]:
+            for el in elements[1:]:
 
                 this_coadd += frames[el]
                 this_bkg_level += bkg_levels[el]
