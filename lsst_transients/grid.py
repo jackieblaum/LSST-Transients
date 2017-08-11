@@ -72,6 +72,15 @@ class Grid(object):
 
         return 'circle(%s,%s,%s")' % (region['ra'], region['dec'], region['radius'])
 
+    def write_regions(self):
+
+        with open('regfile.reg', 'w+') as f:
+            f.write('icrs\n')
+            for region_id in self._df.index:
+                region = self[region_id]
+                f.write('circle(%s,%s,%s")\n' % (region['ra'], region['dec'], region['radius']))
+
+
 
 class GridFactory(object):
     '''
@@ -79,10 +88,10 @@ class GridFactory(object):
     in a .reg file and in a _database.
     '''
 
-    def __init__(self, xmin, xmax, ymin, ymax, overlapfactor, d):
+    def __init__(self, xmin, xmax, ymin, ymax, overlapfactor, r):
         '''
         Constructs a grid object. A region list is instantiated, and the _overlap length is set to be the product of the
-        _overlap factor and diameter/side length.
+        _overlap factor and radius/side length.
 
         :param _xcenter: The _x-coordinate of the center of the image
         :param _ycenter: The _y-coordinate of the center of the image
@@ -91,7 +100,7 @@ class GridFactory(object):
         :param ymin: The minimum y-coordinate of the image
         :param ymax: The maximum y-coordinate of the image
         :param overlapfactor: The fraction of the length of the region by which the regions _overlap one another on the grid
-        :param d: The length of the sides or diameter of the regions in the grid
+        :param r: The radius of the regions in the grid
         '''
 
         self._xmin = xmin
@@ -107,8 +116,8 @@ class GridFactory(object):
         assert float(overlapfactor) < 1, "The _overlap factor must be < 1"
 
         self._overlapfactor = float(overlapfactor)
-        self._d = d
-        self._overlap = overlapfactor * d
+        self._r = r
+        self._overlap = overlapfactor * r * 2
 
         self._regions_wcs = None
         self._angular_distance_arcsec = None
@@ -130,8 +139,7 @@ class GridFactory(object):
         y = a_region.y
 
         # Set the limits such that all parts of the image will be covered by at least one region
-        if self._xmin - 1 - (self._d / 2) < x < self._xmax + 1 + (self._d / 2) and self._ymin - 1 - (
-            self._d / 2) < y < self._ymax + 1 + (self._d / 2):
+        if self._xmin - 1 - self._r < x < self._xmax + 1 + self._r and self._ymin - 1 - self._r < y < self._ymax + 1 + self._r:
 
             return True
 
@@ -149,21 +157,21 @@ class GridFactory(object):
         '''
 
         # Let's figure out the iteration we are in
-        iteration = np.floor(delta / (self._d - self._overlap))
+        iteration = np.floor(delta / ((self._r * 2) - self._overlap))
 
         # How many steps do we need to complete one side of the round?
         steps = iteration * 2
 
         # Let's compute the start point of the round
-        start_x = self._xcenter + (self._d - self._overlap) * iteration
-        start_y = self._ycenter + (self._d - self._overlap) * iteration
+        start_x = self._xcenter + ((self._r * 2) - self._overlap) * iteration
+        start_y = self._ycenter + ((self._r * 2) - self._overlap) * iteration
 
         # Get all the x- and y- coordinates for the centers of the regions
-        xs = np.linspace(start_x - steps * (self._d - self._overlap), start_x, steps + 1)
-        ys = np.linspace(start_y - steps * (self._d - self._overlap), start_y, steps + 1)
+        xs = np.linspace(start_x - steps * ((self._r * 2) - self._overlap), start_x, steps + 1)
+        ys = np.linspace(start_y - steps * ((self._r * 2) - self._overlap), start_y, steps + 1)
 
         # Get all the coordinate pairs and make the CircularRegion objects
-        this_regions = map(lambda (x, y): CircularRegion(x, y, self._d), cartesian_product([xs, ys]))
+        this_regions = map(lambda (x, y): CircularRegion(x, y, self._r), cartesian_product([xs, ys]))
 
         return this_regions
 
@@ -219,6 +227,7 @@ class GridFactory(object):
 
         return regions_wcs
 
+
     def get_grid(self, infile):
         '''
         Converts the grid coordinates from pixels to WCS and writes the grid to a file.
@@ -233,22 +242,20 @@ class GridFactory(object):
         # Convert the locations of the regions to WCS
         regions_wcs = self.pix_to_wcs(infile, regions)
 
-        # Convert the side length/diameter of the regions to WCS
+        # Convert the radius of the regions to WCS
         # NOTE: we assume that on this angular scale there is no distortion due to the projection
         # TODO: fix the projection for the entire LSST field of view (3.5 deg)
 
-        # Get the angular distance between the upper left corner and the upper right corner of the
-        # center region (doesn't make a difference if the region is a circle or square)
+        # Get the angular distance between the left edge and the center of the
+        # center region
         center_region = regions[0]
-        upper_left_x = center_region.x - center_region.d / 2.0
-        upper_y = center_region.y - center_region.d / 2.0
-        upper_right_x = center_region.x + center_region.d / 2.0
+        left_x = center_region.x - center_region.r
+        left_y = center_region.y
 
-        upper_left_sky_coords, upper_right_sky_coords = pix2world(infile,
-                                                                  [[upper_left_x, upper_y], [upper_right_x, upper_y]])
+        left_sky_coords, center_sky_coords = pix2world(infile,[[left_x, left_y], [center_region.x, center_region.y]])
 
-        angular_distance = angular_separation(upper_left_sky_coords[0] * u.deg, upper_left_sky_coords[1] * u.deg,
-                                              upper_right_sky_coords[0] * u.deg, upper_right_sky_coords[1] * u.deg)
+        angular_distance = angular_separation(left_sky_coords[0] * u.deg, left_sky_coords[1] * u.deg,
+                                              center_sky_coords[0] * u.deg, center_sky_coords[1] * u.deg)
 
         angular_distance_arcsec = angular_distance.to("arcsec").value
 
