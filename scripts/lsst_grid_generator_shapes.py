@@ -16,7 +16,7 @@ if __name__ == "__main__":
     # Collect input from the user
     parser = argparse.ArgumentParser(description="Grid CircularRegion Generator")
     parser.add_argument('--input_example', type=str, help='FITS file for one of the visits', required=True)
-    parser.add_argument('--diameter', type=float, help='Length of the sides or diameter of the regions in pixels',
+    parser.add_argument('--radius', type=float, help='Radius of the regions in pixels',
                         required=True)
     parser.add_argument('--fraction', type=float, help='Fraction of the region for which they _overlap',
                         required=True)
@@ -58,13 +58,14 @@ if __name__ == "__main__":
     #     rotation_angle = 0
 
     # Generate the grid of regions
-    grid_factory = GridFactory(min_pix_x, max_pix_x, min_pix_y, max_pix_y, args.fraction, args.diameter)
+    grid_factory = GridFactory(min_pix_x, max_pix_x, min_pix_y, max_pix_y, args.fraction, args.radius)
     grid = grid_factory.get_grid(input_example)
 
     log.info("Generated %i regions" % grid.n_regions)
-    log.info("Side length of regions in pixels/arcsec: %.2f/ %.2f" % (args.diameter, 2 * grid["reg0"]['radius']))
+    log.info("Radius of regions in pixels/arcsec: %.2f/ %.2f" % (args.radius, grid["reg0"]['radius']))
     log.info("Overlap (fraction of region): %.2f" % args.fraction)
 
     grid.write_to(grid_file)
+    grid.write_regions()
 
     log.info("Grid written into %s" % grid_file)
