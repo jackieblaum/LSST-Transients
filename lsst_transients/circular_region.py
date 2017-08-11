@@ -10,19 +10,19 @@ class CircularRegion(object):
     A CircularRegion object is a square or circular region, many of which form a grid.
     '''
 
-    def __init__(self, x, y, d, ds9_string=None):
+    def __init__(self, x, y, r, ds9_string=None):
         '''
         Constructs a CircularRegion object.
 
         :param x: The horizontal location of the center of the region
         :param y: The vertical location of the center of the region
-        :param d: The length of the sides of the region if it is a square, otherwise the diameter
+        :param r: Radius
 		  of the region if it is a circle (in pixels)
         '''
 
         self._x = x
         self._y = y
-        self._diameter_pixels = d
+        self._radius_pixels = r
 
         self._mask = None
 
@@ -52,9 +52,9 @@ class CircularRegion(object):
 
         ra = float(split[1])
         dec = float(split[2])
-        diameter = float(split[3]) * 2
+        radius = float(split[3])
 
-        # Get the diameter in pixels assuming that the diameter is the same in WCS for all regions
+        # Get the radius in pixels assuming that the radius is the same in WCS for all regions
 
         pixel_scale = proj_plane_pixel_scales(w)
 
@@ -68,13 +68,13 @@ class CircularRegion(object):
 
         pixel_scale_arcsec = pixel_scale_with_units.to("arcsec").value
 
-        diameter_pix = diameter / pixel_scale_arcsec
+        radius_pix = radius / pixel_scale_arcsec
 
         # Find the smallest square around the region
         x, y = w.all_world2pix([[ra, dec]], 0)[0]
 
         # Make a region object given the information found previously
-        reg = cls(x, y, diameter_pix, ds9_string=ds9_string)
+        reg = cls(x, y, radius_pix, ds9_string=ds9_string)
 
         return reg
 
@@ -89,9 +89,9 @@ class CircularRegion(object):
         return self._y
 
     @property
-    def d(self):
+    def r(self):
 
-        return self._diameter_pixels
+        return self._radius_pixels
 
     def _get_mask(self):
 
@@ -110,7 +110,7 @@ class CircularRegion(object):
         :return: a string in the form "box(_x, _y, width, height, angle)" to create a box region in DS9
         '''
 
-        r = 'image;circle(%s,%s,%s)' % (self.x, self.y, self._diameter_pixels/2.0)
+        r = 'image;circle(%s,%s,%s)' % (self.x, self.y, self._radius_pixels)
 
         return r
 
@@ -133,14 +133,14 @@ class CircularRegion(object):
         padding
         '''
 
-        corner1 = [int(np.floor(float(self.x) - (float(self.d) / 2.0) - padding)),
-                   int(np.floor(float(self.y) - (float(self.d) / 2.0) - padding))]
-        corner2 = [int(np.floor(float(self.x) - (float(self.d) / 2.0) - padding)),
-                   int(np.ceil(float(self.y) + (float(self.d) / 2.0) + padding))]
-        corner3 = [int(np.ceil(float(self.x) + (float(self.d) / 2.0) + padding)),
-                   int(np.floor(float(self.y) - (float(self.d) / 2.0) - padding))]
-        corner4 = [int(np.ceil(float(self.x) + (float(self.d) / 2.0) + padding)),
-                   int(np.ceil(float(self.y) + (float(self.d) / 2.0) + padding))]
+        corner1 = [int(np.floor(float(self.x) - float(self.r) - padding)),
+                   int(np.floor(float(self.y) - float(self.r) - padding))]
+        corner2 = [int(np.floor(float(self.x) - float(self.r) - padding)),
+                   int(np.ceil(float(self.y) + float(self.r) + padding))]
+        corner3 = [int(np.ceil(float(self.x) + float(self.r) + padding)),
+                   int(np.floor(float(self.y) - float(self.r) - padding))]
+        corner4 = [int(np.ceil(float(self.x) + float(self.r) + padding)),
+                   int(np.ceil(float(self.y) + float(self.r) + padding))]
 
         return [self._fix_point(corner1, data_shape),
                 self._fix_point(corner2, data_shape),
@@ -155,7 +155,7 @@ class CircularRegion(object):
 
         y, x = np.ogrid[1:nx+1, 1:ny+1]
 
-        mask = ((x-self.x)**2 + (y-self.y)**2 <= (self._diameter_pixels / 2.0)**2)  # type: np.ndarray
+        mask = ((x-self.x)**2 + (y-self.y)**2 <= self._radius_pixels**2)  # type: np.ndarray
 
         self._mask = mask
 
